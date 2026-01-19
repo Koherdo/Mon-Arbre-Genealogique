@@ -1,0 +1,2104 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mon Arbre Généalogique - 15 Générations</title>
+    <meta name="description" content="Application web gratuite pour créer et visualiser votre arbre généalogique sur 15 générations">
+    <meta name="keywords" content="généalogie, arbre généalogique, famille, ancêtres, histoire familiale">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        :root {
+            --primary: #2c3e50;
+            --secondary: #3498db;
+            --accent: #e74c3c;
+            --light: #ecf0f1;
+            --dark: #2c3e50;
+            --success: #27ae60;
+            --warning: #f39c12;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: var(--shadow);
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .progress-container {
+            background-color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .progress-bar {
+            height: 20px;
+            background-color: #eee;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--secondary), var(--success));
+            width: 0%;
+            transition: width 0.5s ease;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 30px;
+        }
+
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .sidebar {
+            background-color: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: var(--shadow);
+            height: fit-content;
+        }
+
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 12px 15px;
+            margin-bottom: 15px;
+            border: none;
+            border-radius: 8px;
+            background-color: var(--secondary);
+            color: white;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: left;
+        }
+
+        .btn i {
+            margin-right: 10px;
+        }
+
+        .btn:hover {
+            background-color: #2980b9;
+            transform: translateY(-2px);
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+        }
+
+        .btn-success {
+            background-color: var(--success);
+        }
+
+        .btn-warning {
+            background-color: var(--warning);
+        }
+
+        .person-count {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+
+        .person-count h3 {
+            margin-bottom: 10px;
+            color: var(--primary);
+        }
+
+        .person-count ul {
+            list-style-type: none;
+        }
+
+        .person-count li {
+            padding: 8px 0;
+            border-bottom: 1px dashed #eee;
+        }
+
+        .content-area {
+            background-color: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: var(--shadow);
+            min-height: 600px;
+        }
+
+        .tab-header {
+            display: flex;
+            border-bottom: 2px solid #eee;
+            margin-bottom: 25px;
+        }
+
+        .tab {
+            padding: 15px 25px;
+            cursor: pointer;
+            font-weight: 600;
+            color: #777;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab.active {
+            color: var(--primary);
+            border-bottom: 3px solid var(--secondary);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .form-section {
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .form-section h3 {
+            margin-bottom: 20px;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+        }
+
+        .form-section h3 i {
+            margin-right: 10px;
+            color: var(--secondary);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .form-group input, 
+        .form-group textarea, 
+        .form-group select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border 0.3s ease;
+        }
+
+        .form-group input:focus, 
+        .form-group textarea:focus, 
+        .form-group select:focus {
+            border-color: var(--secondary);
+            outline: none;
+        }
+
+        .form-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .form-group small {
+            color: #777;
+            font-size: 0.85rem;
+        }
+
+        .photo-upload {
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .photo-upload:hover {
+            border-color: var(--secondary);
+            background-color: #f8fafc;
+        }
+
+        .photo-upload i {
+            font-size: 3rem;
+            color: #ccc;
+            margin-bottom: 15px;
+        }
+
+        .photo-preview {
+            display: none;
+            max-width: 200px;
+            margin-top: 15px;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .photo-preview img {
+            width: 100%;
+            height: auto;
+        }
+
+        .tree-container {
+            width: 100%;
+            height: 700px;
+            overflow: auto;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+
+        .person-node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .person-node:hover {
+            transform: scale(1.05);
+        }
+
+        .person-card {
+            background-color: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: var(--shadow);
+            width: 200px;
+            text-align: center;
+        }
+
+        .person-photo {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin: 0 auto 10px;
+            border: 3px solid var(--secondary);
+        }
+
+        .person-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: var(--primary);
+        }
+
+        .person-dates {
+            font-size: 0.9rem;
+            color: #777;
+            margin-bottom: 10px;
+        }
+
+        .person-location {
+            font-size: 0.85rem;
+            color: #999;
+            margin-bottom: 5px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .stat-card {
+            background-color: #f8fafc;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: var(--shadow);
+        }
+
+        .stat-card i {
+            font-size: 2.5rem;
+            color: var(--secondary);
+            margin-bottom: 15px;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--primary);
+            margin-bottom: 10px;
+        }
+
+        .stat-label {
+            color: #777;
+            font-size: 1rem;
+        }
+
+        .timeline {
+            position: relative;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .timeline::after {
+            content: '';
+            position: absolute;
+            width: 6px;
+            background-color: var(--secondary);
+            top: 0;
+            bottom: 0;
+            left: 50%;
+            margin-left: -3px;
+        }
+
+        .timeline-item {
+            padding: 10px 40px;
+            position: relative;
+            width: 50%;
+            box-sizing: border-box;
+        }
+
+        .timeline-item:nth-child(odd) {
+            left: 0;
+        }
+
+        .timeline-item:nth-child(even) {
+            left: 50%;
+        }
+
+        .timeline-content {
+            padding: 20px;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: var(--shadow);
+        }
+
+        .export-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .export-card {
+            background-color: #f8fafc;
+            border-radius: 10px;
+            padding: 25px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .export-card:hover {
+            border-color: var(--secondary);
+            transform: translateY(-5px);
+        }
+
+        .export-card i {
+            font-size: 3rem;
+            color: var(--secondary);
+            margin-bottom: 15px;
+        }
+
+        .person-list {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .person-list-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .person-list-item:hover {
+            background-color: #f8fafc;
+        }
+
+        .person-list-photo {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin-right: 15px;
+            border: 2px solid #ddd;
+        }
+
+        .person-list-info h4 {
+            margin-bottom: 5px;
+            color: var(--primary);
+        }
+
+        .person-list-info p {
+            font-size: 0.9rem;
+            color: #777;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: white;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 700px;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 30px;
+            position: relative;
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #777;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            color: #777;
+            border-top: 1px solid #eee;
+        }
+
+        .generation-info {
+            background-color: #e8f4fc;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid var(--secondary);
+        }
+
+        .generation-info h4 {
+            color: var(--primary);
+            margin-bottom: 10px;
+        }
+
+        .tooltip {
+            position: absolute;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            border-radius: 5px;
+            font-size: 0.9rem;
+            pointer-events: none;
+            z-index: 100;
+            max-width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-tree"></i> Mon Arbre Généalogique</h1>
+            <p>Reconstruisons mon histoire familiale sur 15 générations</p>
+        </header>
+
+        <div class="progress-container">
+            <h3>Progression de mon arbre</h3>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <p id="progressText">Chargement...</p>
+        </div>
+
+        <div class="generation-info">
+            <h4><i class="fas fa-info-circle"></i> 15 Générations Ascendantes</h4>
+            <p>Un arbre sur 15 générations représente théoriquement <strong>16 384 ancêtres</strong> à la 15ème génération. Commencez par vous-même et remontez progressivement.</p>
+        </div>
+
+        <div class="main-content">
+            <div class="sidebar">
+                <button class="btn btn-primary" id="btnNewPerson">
+                    <i class="fas fa-user-plus"></i> Ajouter une personne
+                </button>
+                <button class="btn" id="btnViewTree">
+                    <i class="fas fa-sitemap"></i> Voir l'arbre
+                </button>
+                <button class="btn" id="btnViewList">
+                    <i class="fas fa-list"></i> Liste des personnes
+                </button>
+                <button class="btn" id="btnStats">
+                    <i class="fas fa-chart-bar"></i> Statistiques
+                </button>
+                <button class="btn" id="btnTimeline">
+                    <i class="fas fa-stream"></i> Chronologie
+                </button>
+                <button class="btn btn-warning" id="btnExport">
+                    <i class="fas fa-download"></i> Exporter
+                </button>
+                <button class="btn btn-success" id="btnImport">
+                    <i class="fas fa-upload"></i> Importer
+                </button>
+
+                <div class="person-count">
+                    <h3><i class="fas fa-users"></i> Votre arbre</h3>
+                    <ul id="personCountList">
+                        <!-- Rempli dynamiquement -->
+                    </ul>
+                </div>
+
+                <div class="person-count">
+                    <h3><i class="fas fa-lightbulb"></i> Conseils</h3>
+                    <p style="font-size: 0.9rem; margin-top: 10px;">
+                        <i class="fas fa-check-circle" style="color: var(--success);"></i> Commencez par vous et vos parents
+                        <br><br>
+                        <i class="fas fa-check-circle" style="color: var(--success);"></i> Notez toutes vos sources
+                        <br><br>
+                        <i class="fas fa-check-circle" style="color: var(--success);"></i> Sauvegardez régulièrement
+                    </p>
+                </div>
+            </div>
+
+            <div class="content-area">
+                <div class="tab-header">
+                    <div class="tab active" data-tab="form">Formulaire</div>
+                    <div class="tab" data-tab="tree">Arbre</div>
+                    <div class="tab" data-tab="list">Liste</div>
+                    <div class="tab" data-tab="stats">Statistiques</div>
+                    <div class="tab" data-tab="timeline">Chronologie</div>
+                    <div class="tab" data-tab="export">Export/Import</div>
+                </div>
+
+                <!-- Onglet Formulaire -->
+                <div class="tab-content active" id="formTab">
+                    <h2 style="color: var(--primary); margin-bottom: 20px;">
+                        <i class="fas fa-user-edit"></i> Fiche personnelle
+                    </h2>
+                    
+                    <form id="personForm">
+                        <div class="form-section">
+                            <h3><i class="fas fa-id-card"></i> Identité</h3>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="lastName">Nom de famille *</label>
+                                    <input type="text" id="lastName" name="lastName" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="firstName">Prénom(s) *</label>
+                                    <input type="text" id="firstName" name="firstName" required>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="nickname">Surnom(s)</label>
+                                    <input type="text" id="nickname" name="nickname" placeholder="Surnoms, diminutifs...">
+                                </div>
+                                <div class="form-group">
+                                    <label for="gender">Sexe</label>
+                                    <select id="gender" name="gender">
+                                        <option value="M">Masculin</option>
+                                        <option value="F">Féminin</option>
+                                        <option value="U">Inconnu</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-section">
+                            <h3><i class="fas fa-calendar-alt"></i> Dates et lieux</h3>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="birthDate">Date de naissance</label>
+                                    <input type="date" id="birthDate" name="birthDate">
+                                </div>
+                                <div class="form-group">
+                                    <label for="birthPlace">Lieu de naissance</label>
+                                    <input type="text" id="birthPlace" name="birthPlace" placeholder="Ville, département, pays">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="deathDate">Date de décès</label>
+                                    <input type="date" id="deathDate" name="deathDate">
+                                </div>
+                                <div class="form-group">
+                                    <label for="deathPlace">Lieu de décès</label>
+                                    <input type="text" id="deathPlace" name="deathPlace" placeholder="Ville, département, pays">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-section">
+                            <h3><i class="fas fa-briefcase"></i> Vie professionnelle et résidences</h3>
+                            <div class="form-group">
+                                <label for="professions">Profession(s)</label>
+                                <textarea id="professions" name="professions" placeholder="Ex: Agriculteur (1945-1960), puis commerçant (1960-1980)"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label for="residences">Résidences</label>
+                                <textarea id="residences" name="residences" placeholder="Ex: Bafang (1920-1965), Meiganga (1965-1980)"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="form-section">
+                            <h3><i class="fas fa-camera"></i> Photo et documents</h3>
+                            <div class="form-group">
+                                <label>Photo de la personne</label>
+                                <div class="photo-upload" id="photoUpload">
+                                    <i class="fas fa-cloud-upload-alt"></i>
+                                    <p>Cliquez pour télécharger une photo</p>
+                                    <input type="file" id="photoInput" accept="image/*" style="display: none;">
+                                </div>
+                                <div class="photo-preview" id="photoPreview">
+                                    <img id="previewImage" src="" alt="Aperçu">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="documents">Documents associés</label>
+                                <textarea id="documents" name="documents" placeholder="Actes, lettres, certificats..."></textarea>
+                            </div>
+                        </div>
+
+                        <div class="form-section">
+                            <h3><i class="fas fa-sticky-note"></i> Informations complémentaires</h3>
+                            <div class="form-group">
+                                <label for="distinctiveSigns">Signes distinctifs</label>
+                                <textarea id="distinctiveSigns" name="distinctiveSigns" placeholder="Particularités physiques, traits de caractère..."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label for="testimonies">Témoignages et anecdotes</label>
+                                <textarea id="testimonies" name="testimonies" placeholder="Histoires, citations, anecdotes familiales..."></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label for="additionalInfo">Informations supplémentaires</label>
+                                <textarea id="additionalInfo" name="additionalInfo" placeholder="Croyances, éducation, migrations, biens..."></textarea>
+                            </div>
+                        </div>
+
+                        <div class="form-section">
+                            <h3><i class="fas fa-network-wired"></i> Liens familiaux</h3>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="father">Père</label>
+                                    <select id="father" name="father">
+                                        <option value="">-- Sélectionner --</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="mother">Mère</label>
+                                    <select id="mother" name="mother">
+                                        <option value="">-- Sélectionner --</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="spouses">Conjoint(s)</label>
+                                <select id="spouses" name="spouses" multiple style="height: 80px;">
+                                    <option value="">-- Sélectionner --</option>
+                                </select>
+                                <small>Maintenez Ctrl (Cmd sur Mac) pour sélectionner plusieurs conjoints</small>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 15px; margin-top: 30px;">
+                            <button type="submit" class="btn btn-success" style="flex: 1;">
+                                <i class="fas fa-save"></i> Enregistrer
+                            </button>
+                            <button type="button" class="btn btn-primary" id="btnClearForm" style="flex: 1;">
+                                <i class="fas fa-broom"></i> Nouveau
+                            </button>
+                        </div>
+
+                        <input type="hidden" id="personId" name="personId" value="">
+                    </form>
+                </div>
+
+                <!-- Onglet Arbre -->
+                <div class="tab-content" id="treeTab">
+                    <h2 style="color: var(--primary); margin-bottom: 20px;">
+                        <i class="fas fa-sitemap"></i> Arbre Généalogique
+                    </h2>
+                    <div style="margin-bottom: 20px;">
+                        <button class="btn" id="btnViewFanChart" style="width: auto; display: inline-block; margin-right: 10px;">
+                            <i class="fas fa-chart-pie"></i> Vue en éventail
+                        </button>
+                        <button class="btn" id="btnViewStandardTree" style="width: auto; display: inline-block;">
+                            <i class="fas fa-project-diagram"></i> Vue standard
+                        </button>
+                    </div>
+                    <div class="tree-container" id="treeVisualization">
+                        <p style="text-align: center; padding: 50px; color: #777;">
+                            L'arbre généalogique s'affichera ici. Ajoutez d'abord quelques personnes.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Onglet Liste -->
+                <div class="tab-content" id="listTab">
+                    <h2 style="color: var(--primary); margin-bottom: 20px;">
+                        <i class="fas fa-list"></i> Liste des personnes
+                    </h2>
+                    <div style="margin-bottom: 20px;">
+                        <input type="text" id="searchPerson" placeholder="Rechercher une personne..." style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px;">
+                    </div>
+                    <div class="person-list" id="personListContainer">
+                        <!-- Liste remplie dynamiquement -->
+                    </div>
+                </div>
+
+                <!-- Onglet Statistiques -->
+                <div class="tab-content" id="statsTab">
+                    <h2 style="color: var(--primary); margin-bottom: 20px;">
+                        <i class="fas fa-chart-bar"></i> Statistiques de l'arbre
+                    </h2>
+                    <div class="stats-grid" id="statsGrid">
+                        <!-- Rempli dynamiquement -->
+                    </div>
+                    <div style="margin-top: 30px;">
+                        <h3 style="color: var(--primary); margin-bottom: 15px;">
+                            <i class="fas fa-map-marker-alt"></i> Répartition géographique
+                        </h3>
+                        <div id="mapPlaceholder" style="background-color: #f8fafc; padding: 30px; border-radius: 10px; text-align: center; color: #777;">
+                            <i class="fas fa-map" style="font-size: 3rem; margin-bottom: 15px;"></i>
+                            <p>Carte des lieux de naissance et de décès (à implémenter)</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Onglet Chronologie -->
+                <div class="tab-content" id="timelineTab">
+                    <h2 style="color: var(--primary); margin-bottom: 20px;">
+                        <i class="fas fa-stream"></i> Chronologie familiale
+                    </h2>
+                    <div class="timeline" id="timelineContainer">
+                        <!-- Rempli dynamiquement -->
+                    </div>
+                </div>
+
+                <!-- Onglet Export/Import -->
+                <div class="tab-content" id="exportTab">
+                    <h2 style="color: var(--primary); margin-bottom: 20px;">
+                        <i class="fas fa-exchange-alt"></i> Export et Import de données
+                    </h2>
+                    <div class="export-options">
+                        <div class="export-card" id="exportJSON">
+                            <i class="fas fa-file-code"></i>
+                            <h3>Exporter en JSON</h3>
+                            <p>Téléchargez vos données au format JSON pour sauvegarde</p>
+                        </div>
+                        <div class="export-card" id="exportGEDCOM">
+                            <i class="fas fa-file-alt"></i>
+                            <h3>Exporter en GEDCOM</h3>
+                            <p>Format standard pour échanger avec d'autres logiciels</p>
+                        </div>
+                        <div class="export-card" id="exportPDF">
+                            <i class="fas fa-file-pdf"></i>
+                            <h3>Exporter en PDF</h3>
+                            <p>Créez un document imprimable de votre arbre</p>
+                        </div>
+                        <div class="export-card" id="importData">
+                            <i class="fas fa-file-import"></i>
+                            <h3>Importer des données</h3>
+                            <p>Importez un fichier JSON ou GEDCOM</p>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 40px; background-color: #f8fafc; padding: 20px; border-radius: 10px;">
+                        <h3 style="color: var(--primary); margin-bottom: 15px;">
+                            <i class="fas fa-database"></i> Sauvegarde automatique
+                        </h3>
+                        <p>Vos données sont automatiquement sauvegardées dans votre navigateur.</p>
+                        <p style="margin-top: 10px; font-size: 0.9rem; color: #777;">
+                            <i class="fas fa-info-circle"></i> Pour une sauvegarde permanente, exportez régulièrement vos données.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Mon Arbre Généalogique &copy; 2026 - Application pour reconstruire mon histoire familiale sur 15 générations</p>
+            <p style="font-size: 0.9rem; margin-top: 10px;">Théoriquement, un arbre sur 15 générations contient 32 767 personnes (moi + 16 384 ancêtres à la 15ème génération + leurs conjoints)</p>
+        </footer>
+    </div>
+
+    <!-- Modal pour visualiser une personne -->
+    <div class="modal" id="personModal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeModal">&times;</span>
+            <div id="modalContent">
+                <!-- Contenu rempli dynamiquement -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Données de l'application
+        let familyTree = {
+            persons: [],
+            nextId: 1,
+            metadata: {
+                created: new Date().toISOString(),
+                lastModified: new Date().toISOString(),
+                version: "1.0.0",
+                totalGenerations: 15
+            }
+        };
+
+       // ==============================================
+        // FONCTIONS POUR GITHUB PAGES
+        // ==============================================
+        
+        // Fonction pour générer un ID unique
+        function generateUniqueId() {
+            return 'P-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        }
+        
+        // Fonction améliorée pour sauvegarder les données
+        function saveData() {
+            try {
+                familyTree.metadata.lastModified = new Date().toISOString();
+                familyTree.metadata.personCount = familyTree.persons.length;
+                
+                // Calculer les statistiques pour les métadonnées
+                const stats = calculateStats();
+                familyTree.metadata.stats = stats;
+                
+                localStorage.setItem('familyTreeData', JSON.stringify(familyTree));
+                console.log('Données sauvegardées avec succès');
+            } catch (error) {
+                console.error('Erreur lors de la sauvegarde:', error);
+            }
+        }
+        
+        // Fonction pour exporter avec nom de fichier amélioré
+        function exportJSON() {
+            const dataStr = JSON.stringify(familyTree, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+            
+            const today = new Date();
+            const dateStr = today.toISOString().slice(0,10);
+            const timeStr = today.getHours() + '-' + today.getMinutes();
+            const exportFileDefaultName = `arbre-genealogique-${dateStr}_${timeStr}.json`;
+            
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            document.body.appendChild(linkElement);
+            linkElement.click();
+            document.body.removeChild(linkElement);
+        }
+        
+        // Fonction pour créer un backup automatique
+        function createAutoBackup() {
+            const backupKey = 'familyTreeBackup_' + new Date().toISOString().slice(0, 10);
+            localStorage.setItem(backupKey, JSON.stringify(familyTree));
+            
+            // Garder seulement les 7 derniers backups
+            const keys = Object.keys(localStorage).filter(key => key.startsWith('familyTreeBackup_'));
+            if (keys.length > 7) {
+                keys.sort().slice(0, keys.length - 7).forEach(key => localStorage.removeItem(key));
+            }
+        }
+        
+        // ==============================================
+        // FONCTIONS SPÉCIFIQUES 15 GÉNÉRATIONS
+        // ==============================================
+        
+        // Calculer la génération de manière récursive
+        function calculateGenerationRecursive(personId, visited = new Set()) {
+            if (visited.has(personId)) return 1; // Éviter les cycles
+            visited.add(personId);
+            
+            const person = familyTree.persons.find(p => p.id === personId);
+            if (!person) return 1;
+            
+            if (person.generation) return person.generation;
+            
+            let maxParentGeneration = 1;
+            
+            if (person.father) {
+                const fatherGen = calculateGenerationRecursive(person.father, new Set(visited));
+                maxParentGeneration = Math.max(maxParentGeneration, fatherGen + 1);
+            }
+            
+            if (person.mother) {
+                const motherGen = calculateGenerationRecursive(person.mother, new Set(visited));
+                maxParentGeneration = Math.max(maxParentGeneration, motherGen + 1);
+            }
+            
+            return maxParentGeneration;
+        }
+        
+        // Valider qu'on ne dépasse pas 15 générations
+        function validateGenerationLimit(personId, parentId) {
+            if (!parentId) return true;
+            
+            const person = familyTree.persons.find(p => p.id === personId);
+            const parent = familyTree.persons.find(p => p.id === parentId);
+            
+            if (!person || !parent) return true;
+            
+            const parentGeneration = parent.generation || calculateGenerationRecursive(parentId);
+            
+            if (parentGeneration >= 15) {
+                alert(`Attention : La 15ème génération est la limite maximale. Ce parent est déjà à la génération ${parentGeneration}.`);
+                return false;
+            }
+            
+            return true;
+        }
+        
+        // Afficher la pyramide des générations
+        function renderGenerationPyramid() {
+            const generations = {};
+            
+            for (let i = 1; i <= 15; i++) {
+                generations[i] = familyTree.persons.filter(p => p.generation === i).length;
+            }
+            
+            let html = '<h3>Pyramide des générations</h3>';
+            html += '<div style="display: flex; align-items: flex-end; height: 200px; margin-top: 20px; gap: 5px;">';
+            
+            for (let i = 15; i >= 1; i--) {
+                const count = generations[i] || 0;
+                const maxCount = Math.max(...Object.values(generations), 1);
+                const height = (count / maxCount) * 180;
+                const theoretical = i === 1 ? 1 : Math.pow(2, i - 1);
+                
+                html += `
+                    <div style="text-align: center; flex: 1;">
+                        <div style="height: ${height}px; background: ${count === 0 ? '#ecf0f1' : count < theoretical ? '#3498db' : '#27ae60'}; 
+                                 border-radius: 5px 5px 0 0; position: relative;">
+                            <div style="position: absolute; top: -25px; left: 0; right: 0; font-size: 0.8rem; font-weight: bold;">
+                                ${count}
+                            </div>
+                        </div>
+                        <div style="font-size: 0.8rem; margin-top: 5px;">
+                            G${i}<br>
+                            <small>(${theoretical})</small>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            html += '<p style="margin-top: 10px; font-size: 0.9rem; color: #777;">';
+            html += 'En bleu : générations incomplètes<br>';
+            html += 'En vert : générations complètes (nombre théorique atteint)<br>';
+            html += 'Nombre entre parenthèses = nombre théorique d\'ancêtres';
+            html += '</p>';
+            
+            return html;
+        }
+        
+        // ==============================================
+        // AMÉLIORATIONS DE L'INTERFACE
+        // ==============================================
+        
+        // Ajouter un tutoriel d'introduction
+        function showTutorial() {
+            const hasSeenTutorial = localStorage.getItem('hasSeenTutorial');
+            
+            if (!hasSeenTutorial && familyTree.persons.length === 0) {
+                setTimeout(() => {
+                    if (confirm("Bienvenue dans votre application d'arbre généalogique !\n\nSouhaitez-vous voir un tutoriel rapide ?")) {
+                        alert("TUTORIEL RAPIDE :\n\n1. Commencez par ajouter votre fiche (vous-même)\n2. Ajoutez vos parents\n3. Remontez progressivement les générations\n4. Utilisez l'export pour sauvegarder\n\nAstuce : Un arbre à 15 générations contient théoriquement 32 767 personnes !");
+                    }
+                    localStorage.setItem('hasSeenTutorial', 'true');
+                }, 1000);
+            }
+        }
+        
+        // Ajouter une barre d'état
+        function updateStatusBar() {
+            const statusElement = document.getElementById('statusBar') || createStatusBar();
+            const stats = calculateStats();
+            
+            statusElement.innerHTML = `
+                <span><i class="fas fa-users"></i> ${stats.totalPersons} personnes</span>
+                <span><i class="fas fa-layer-group"></i> Génération max: ${stats.maxGeneration}/15</span>
+                <span><i class="fas fa-save"></i> Dernière sauvegarde: ${new Date().toLocaleTimeString()}</span>
+            `;
+        }
+        
+        function createStatusBar() {
+            const statusBar = document.createElement('div');
+            statusBar.id = 'statusBar';
+            statusBar.style.cssText = `
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: var(--primary);
+                color: white;
+                padding: 8px 20px;
+                font-size: 0.9rem;
+                display: flex;
+                justify-content: space-between;
+                z-index: 1000;
+            `;
+            document.body.appendChild(statusBar);
+            return statusBar;
+        }
+      
+        // Éléments DOM
+        const tabs = document.querySelectorAll('.tab');
+        const tabContents = document.querySelectorAll('.tab-content');
+        const personForm = document.getElementById('personForm');
+        const photoUpload = document.getElementById('photoUpload');
+        const photoInput = document.getElementById('photoInput');
+        const photoPreview = document.getElementById('photoPreview');
+        const previewImage = document.getElementById('previewImage');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const personCountList = document.getElementById('personCountList');
+        const personListContainer = document.getElementById('personListContainer');
+        const searchPerson = document.getElementById('searchPerson');
+        const statsGrid = document.getElementById('statsGrid');
+        const timelineContainer = document.getElementById('timelineContainer');
+        const btnClearForm = document.getElementById('btnClearForm');
+        const personModal = document.getElementById('personModal');
+        const closeModal = document.getElementById('closeModal');
+        const modalContent = document.getElementById('modalContent');
+
+        // Initialisation
+         function initApp() {
+            console.log('Initialisation de l\'application Arbre Généalogique');
+            
+            // Charger les données
+            loadData();
+            
+            // Mettre à jour tous les sélecteurs
+            updatePersonSelects();
+            
+            // Mettre à jour l'interface
+            updateUI();
+            
+            // Afficher le tutoriel si premier lancement
+            showTutorial();
+            
+            // Créer la barre d'état
+            updateStatusBar();
+            
+            // Sauvegarde automatique périodique
+            setInterval(() => {
+                saveData();
+                updateStatusBar();
+            }, 30000); // Toutes les 30 secondes
+            
+            // Backup quotidien
+            setInterval(() => {
+                createAutoBackup();
+            }, 24 * 60 * 60 * 1000); // Tous les jours
+        }
+        });
+
+        // Configuration des écouteurs d'événements
+        function setupEventListeners() {
+            // Onglets
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const tabId = tab.getAttribute('data-tab');
+                    switchTab(tabId);
+                });
+            });
+
+            // Boutons de navigation
+            document.getElementById('btnNewPerson').addEventListener('click', () => {
+                clearForm();
+                switchTab('form');
+            });
+            
+            document.getElementById('btnViewTree').addEventListener('click', () => {
+                switchTab('tree');
+                renderTree();
+            });
+            
+            document.getElementById('btnViewList').addEventListener('click', () => {
+                switchTab('list');
+                renderPersonList();
+            });
+            
+            document.getElementById('btnStats').addEventListener('click', () => {
+                switchTab('stats');
+                renderStats();
+            });
+            
+            document.getElementById('btnTimeline').addEventListener('click', () => {
+                switchTab('timeline');
+                renderTimeline();
+            });
+            
+            document.getElementById('btnExport').addEventListener('click', () => {
+                switchTab('export');
+            });
+            
+            document.getElementById('btnImport').addEventListener('click', () => {
+                document.getElementById('importData').click();
+            });
+
+            // Photo upload
+            photoUpload.addEventListener('click', () => {
+                photoInput.click();
+            });
+            
+            photoInput.addEventListener('change', function() {
+                if (this.files && this.files[0]) {
+                    const reader = new FileReader();
+                    
+                    reader.onload = function(e) {
+                        previewImage.src = e.target.result;
+                        photoPreview.style.display = 'block';
+                    };
+                    
+                    reader.readAsDataURL(this.files[0]);
+                }
+            });
+
+            // Formulaire
+            personForm.addEventListener('submit', savePerson);
+            btnClearForm.addEventListener('click', clearForm);
+
+            // Recherche
+            searchPerson.addEventListener('input', renderPersonList);
+
+            // Export/Import
+            document.getElementById('exportJSON').addEventListener('click', exportJSON);
+            document.getElementById('exportGEDCOM').addEventListener('click', exportGEDCOM);
+            document.getElementById('exportPDF').addEventListener('click', exportPDF);
+            document.getElementById('importData').addEventListener('click', () => {
+                // Créer un input file pour l'import
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.accept = '.json,.ged,.gedcom';
+                fileInput.addEventListener('change', importData);
+                fileInput.click();
+            });
+
+            // Modal
+            closeModal.addEventListener('click', () => {
+                personModal.style.display = 'none';
+            });
+            
+            window.addEventListener('click', (event) => {
+                if (event.target === personModal) {
+                    personModal.style.display = 'none';
+                }
+            });
+        }
+
+        // Changer d'onglet
+        function switchTab(tabId) {
+            // Désactiver tous les onglets
+            tabs.forEach(tab => tab.classList.remove('active'));
+            tabContents.forEach(content => content.classList.remove('active'));
+            
+            // Activer l'onglet sélectionné
+            document.querySelector(`.tab[data-tab="${tabId}"]`).classList.add('active');
+            document.getElementById(`${tabId}Tab`).classList.add('active');
+        }
+
+        // Sauvegarder une personne
+        function savePerson(e) {
+            e.preventDefault();
+            
+            // Récupérer les données du formulaire
+            const personId = document.getElementById('personId').value;
+            const personData = {
+                id: personId || `P-${familyTree.nextId}`,
+                lastName: document.getElementById('lastName').value,
+                firstName: document.getElementById('firstName').value,
+                nickname: document.getElementById('nickname').value,
+                gender: document.getElementById('gender').value,
+                birthDate: document.getElementById('birthDate').value,
+                birthPlace: document.getElementById('birthPlace').value,
+                deathDate: document.getElementById('deathDate').value,
+                deathPlace: document.getElementById('deathPlace').value,
+                professions: document.getElementById('professions').value,
+                residences: document.getElementById('residences').value,
+                photo: previewImage.src || '',
+                documents: document.getElementById('documents').value,
+                distinctiveSigns: document.getElementById('distinctiveSigns').value,
+                testimonies: document.getElementById('testimonies').value,
+                additionalInfo: document.getElementById('additionalInfo').value,
+                father: document.getElementById('father').value,
+                mother: document.getElementById('mother').value,
+                spouses: Array.from(document.getElementById('spouses').selectedOptions).map(opt => opt.value).filter(v => v),
+                generation: calculateGeneration(personId)
+            };
+            
+            // Ajouter ou mettre à jour
+            if (personId) {
+                // Mettre à jour
+                const index = familyTree.persons.findIndex(p => p.id === personId);
+                if (index !== -1) {
+                    familyTree.persons[index] = {...familyTree.persons[index], ...personData};
+                }
+            } else {
+                // Ajouter nouvelle personne
+                familyTree.persons.push(personData);
+                if (!personId) familyTree.nextId++;
+            }
+            
+            // Sauvegarder et mettre à jour l'interface
+            saveData();
+            updateUI();
+            updatePersonSelects();
+            clearForm();
+            
+            // Afficher un message de confirmation
+            alert(`Personne ${personId ? 'modifiée' : 'ajoutée'} avec succès !`);
+        }
+
+        // Calculer la génération
+        function calculateGeneration(personId) {
+            if (!personId) return 1; // L'utilisateur est à la génération 1
+            
+            const person = familyTree.persons.find(p => p.id === personId);
+            if (!person) return 1;
+            
+            // Si c'est une personne existante, on garde sa génération
+            if (person.generation) return person.generation;
+            
+            // Sinon, on essaie de calculer à partir des parents
+            let parentGeneration = 1;
+            if (person.father) {
+                const father = familyTree.persons.find(p => p.id === person.father);
+                if (father && father.generation) {
+                    parentGeneration = Math.max(parentGeneration, father.generation + 1);
+                }
+            }
+            if (person.mother) {
+                const mother = familyTree.persons.find(p => p.id === person.mother);
+                if (mother && mother.generation) {
+                    parentGeneration = Math.max(parentGeneration, mother.generation + 1);
+                }
+            }
+            
+            return parentGeneration;
+        }
+
+        // Effacer le formulaire
+        function clearForm() {
+            personForm.reset();
+            document.getElementById('personId').value = '';
+            photoPreview.style.display = 'none';
+            previewImage.src = '';
+        }
+
+        // Mettre à jour les sélecteurs de personnes
+        function updatePersonSelects() {
+            const fatherSelect = document.getElementById('father');
+            const motherSelect = document.getElementById('mother');
+            const spousesSelect = document.getElementById('spouses');
+            
+            // Sauvegarder les valeurs sélectionnées
+            const selectedFather = fatherSelect.value;
+            const selectedMother = motherSelect.value;
+            const selectedSpouses = Array.from(spousesSelect.selectedOptions).map(opt => opt.value);
+            
+            // Effacer les options
+            fatherSelect.innerHTML = '<option value="">-- Sélectionner --</option>';
+            motherSelect.innerHTML = '<option value="">-- Sélectionner --</option>';
+            spousesSelect.innerHTML = '<option value="">-- Sélectionner --</option>';
+            
+            // Ajouter les personnes
+            familyTree.persons.forEach(person => {
+                const optionText = `${person.firstName} ${person.lastName} (${person.id})`;
+                
+                // Père (seulement hommes)
+                if (person.gender === 'M' || person.gender === 'U') {
+                    const option = document.createElement('option');
+                    option.value = person.id;
+                    option.textContent = optionText;
+                    fatherSelect.appendChild(option);
+                }
+                
+                // Mère (seulement femmes)
+                if (person.gender === 'F' || person.gender === 'U') {
+                    const option = document.createElement('option');
+                    option.value = person.id;
+                    option.textContent = optionText;
+                    motherSelect.appendChild(option);
+                }
+                
+                // Conjoints (toutes personnes)
+                const spouseOption = document.createElement('option');
+                spouseOption.value = person.id;
+                spouseOption.textContent = optionText;
+                spousesSelect.appendChild(spouseOption);
+            });
+            
+            // Restaurer les sélections
+            fatherSelect.value = selectedFather;
+            motherSelect.value = selectedMother;
+            
+            // Pour les conjoints multiples
+            selectedSpouses.forEach(spouseId => {
+                const option = Array.from(spousesSelect.options).find(opt => opt.value === spouseId);
+                if (option) option.selected = true;
+            });
+        }
+
+        // Mettre à jour l'interface
+        function updateUI() {
+            updateProgress();
+            updatePersonCount();
+        }
+
+        // Mettre à jour la progression
+        function updateProgress() {
+            const totalPersons = familyTree.persons.length;
+            const maxPersons = 100; // Objectif initial
+            const progress = Math.min((totalPersons / maxPersons) * 100, 100);
+            
+            progressFill.style.width = `${progress}%`;
+            progressText.textContent = `${totalPersons} personnes ajoutées`;
+        }
+
+        // Mettre à jour le compteur de personnes
+        function updatePersonCount() {
+            const counts = {
+                total: familyTree.persons.length,
+                male: familyTree.persons.filter(p => p.gender === 'M').length,
+                female: familyTree.persons.filter(p => p.gender === 'F').length,
+                unknownGender: familyTree.persons.filter(p => p.gender === 'U' || !p.gender).length,
+                withPhoto: familyTree.persons.filter(p => p.photo).length
+            };
+            
+            personCountList.innerHTML = `
+                <li><strong>Total:</strong> ${counts.total} personnes</li>
+                <li><strong>Hommes:</strong> ${counts.male}</li>
+                <li><strong>Femmes:</strong> ${counts.female}</li>
+                <li><strong>Genre inconnu:</strong> ${counts.unknownGender}</li>
+                <li><strong>Avec photo:</strong> ${counts.withPhoto}</li>
+            `;
+        }
+
+        // Rendre la liste des personnes
+        function renderPersonList() {
+            const searchTerm = searchPerson.value.toLowerCase();
+            const filteredPersons = familyTree.persons.filter(person => {
+                if (!searchTerm) return true;
+                
+                const fullName = `${person.firstName} ${person.lastName} ${person.nickname || ''}`.toLowerCase();
+                return fullName.includes(searchTerm) || 
+                       person.birthPlace?.toLowerCase().includes(searchTerm) ||
+                       person.professions?.toLowerCase().includes(searchTerm);
+            });
+            
+            if (filteredPersons.length === 0) {
+                personListContainer.innerHTML = `
+                    <p style="text-align: center; padding: 40px; color: #777;">
+                        Aucune personne ne correspond à votre recherche.
+                    </p>
+                `;
+                return;
+            }
+            
+            personListContainer.innerHTML = filteredPersons.map(person => {
+                const birthYear = person.birthDate ? new Date(person.birthDate).getFullYear() : '?';
+                const deathYear = person.deathDate ? new Date(person.deathDate).getFullYear() : '?';
+                
+                return `
+                    <div class="person-list-item" data-id="${person.id}">
+                        ${person.photo ? 
+                            `<img src="${person.photo}" class="person-list-photo" alt="${person.firstName} ${person.lastName}">` : 
+                            `<div class="person-list-photo" style="background-color: ${person.gender === 'M' ? '#3498db' : person.gender === 'F' ? '#e74c3c' : '#95a5a6'}; display: flex; align-items: center; justify-content: center;">
+                                <i class="fas fa-user" style="color: white; font-size: 1.5rem;"></i>
+                            </div>`
+                        }
+                        <div class="person-list-info">
+                            <h4>${person.firstName} ${person.lastName} ${person.nickname ? `"${person.nickname}"` : ''}</h4>
+                            <p>${birthYear} - ${deathYear} | ${person.birthPlace || 'Lieu inconnu'}</p>
+                            <p style="font-size: 0.85rem; color: #777;">${person.professions || 'Profession non renseignée'}</p>
+                        </div>
+                        <div style="margin-left: auto;">
+                            <button class="btn" style="width: auto; padding: 8px 15px; margin: 0 5px;" onclick="editPerson('${person.id}')">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn" style="width: auto; padding: 8px 15px; background-color: var(--accent);" onclick="viewPersonDetails('${person.id}')">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Ajouter des écouteurs pour la sélection
+            document.querySelectorAll('.person-list-item').forEach(item => {
+                item.addEventListener('click', function(e) {
+                    if (!e.target.closest('button')) {
+                        const personId = this.getAttribute('data-id');
+                        viewPersonDetails(personId);
+                    }
+                });
+            });
+        }
+
+        // Rendre l'arbre généalogique
+        function renderTree() {
+            const treeContainer = document.getElementById('treeVisualization');
+            
+            if (familyTree.persons.length === 0) {
+                treeContainer.innerHTML = `
+                    <p style="text-align: center; padding: 50px; color: #777;">
+                        Ajoutez des personnes pour visualiser l'arbre généalogique.
+                    </p>
+                `;
+                return;
+            }
+            
+            // Pour cet exemple, nous allons créer une visualisation simple
+            treeContainer.innerHTML = `
+                <h3 style="text-align: center; margin-bottom: 20px; color: var(--primary);">
+                    Arbre généalogique (${familyTree.persons.length} personnes)
+                </h3>
+                <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 20px;" id="treeNodes">
+                    ${familyTree.persons.map(person => {
+                        const birthYear = person.birthDate ? new Date(person.birthDate).getFullYear() : '?';
+                        const deathYear = person.deathDate ? new Date(person.deathDate).getFullYear() : '?';
+                        
+                        return `
+                            <div class="person-card person-node" data-id="${person.id}" onclick="viewPersonDetails('${person.id}')">
+                                ${person.photo ? 
+                                    `<img src="${person.photo}" class="person-photo" alt="${person.firstName} ${person.lastName}">` : 
+                                    `<div class="person-photo" style="background-color: ${person.gender === 'M' ? '#3498db' : person.gender === 'F' ? '#e74c3c' : '#95a5a6'}; display: flex; align-items: center; justify-content: center;">
+                                        <i class="fas fa-user" style="color: white; font-size: 2rem;"></i>
+                                    </div>`
+                                }
+                                <div class="person-name">${person.firstName} ${person.lastName}</div>
+                                <div class="person-dates">${birthYear} - ${deathYear}</div>
+                                <div class="person-location">${person.birthPlace || ''}</div>
+                                <div style="font-size: 0.8rem; color: #777; margin-top: 5px;">Génération ${person.generation || '?'}</div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+                <div style="text-align: center; margin-top: 30px; color: #777; font-size: 0.9rem;">
+                    <p>Cliquez sur une personne pour voir ses détails. L'arbre interactif complet sera développé avec D3.js.</p>
+                </div>
+            `;
+        }
+
+        // Rendre les statistiques
+        function renderStats() {
+            if (familyTree.persons.length === 0) {
+                statsGrid.innerHTML = `
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: #777;">
+                        <i class="fas fa-chart-bar" style="font-size: 3rem; margin-bottom: 15px;"></i>
+                        <p>Ajoutez des personnes pour voir les statistiques de votre arbre.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Calculer les statistiques
+            const stats = calculateStats();
+            
+            statsGrid.innerHTML = `
+                <div class="stat-card">
+                    <i class="fas fa-users"></i>
+                    <div class="stat-number">${stats.totalPersons}</div>
+                    <div class="stat-label">Personnes totales</div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-venus"></i>
+                    <div class="stat-number">${stats.femaleCount}</div>
+                    <div class="stat-label">Femmes (${stats.femalePercent}%)</div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-mars"></i>
+                    <div class="stat-number">${stats.maleCount}</div>
+                    <div class="stat-label">Hommes (${stats.malePercent}%)</div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-camera"></i>
+                    <div class="stat-number">${stats.withPhoto}</div>
+                    <div class="stat-label">Avec photo (${stats.withPhotoPercent}%)</div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-birthday-cake"></i>
+                    <div class="stat-number">${stats.averageAge}</div>
+                    <div class="stat-label">Âge moyen (ans)</div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-map-marked-alt"></i>
+                    <div class="stat-number">${stats.uniqueLocations}</div>
+                    <div class="stat-label">Lieux différents</div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-heart"></i>
+                    <div class="stat-number">${stats.marriedCount}</div>
+                    <div class="stat-label">Personnes mariées</div>
+                </div>
+                <div class="stat-card">
+                    <i class="fas fa-layer-group"></i>
+                    <div class="stat-number">${stats.maxGeneration}</div>
+                    <div class="stat-label">Génération max</div>
+                </div>
+            `;
+        }
+
+        // Calculer les statistiques
+        function calculateStats() {
+            const totalPersons = familyTree.persons.length;
+            const maleCount = familyTree.persons.filter(p => p.gender === 'M').length;
+            const femaleCount = familyTree.persons.filter(p => p.gender === 'F').length;
+            const unknownGender = totalPersons - maleCount - femaleCount;
+            
+            const withPhoto = familyTree.persons.filter(p => p.photo).length;
+            
+            // Calcul de l'âge moyen
+            let totalAge = 0;
+            let countWithAge = 0;
+            
+            familyTree.persons.forEach(person => {
+                if (person.birthDate && person.deathDate) {
+                    const birth = new Date(person.birthDate);
+                    const death = new Date(person.deathDate);
+                    const age = death.getFullYear() - birth.getFullYear();
+                    totalAge += age;
+                    countWithAge++;
+                }
+            });
+            
+            const averageAge = countWithAge > 0 ? Math.round(totalAge / countWithAge) : 0;
+            
+            // Lieux uniques
+            const locations = new Set();
+            familyTree.persons.forEach(person => {
+                if (person.birthPlace) locations.add(person.birthPlace);
+                if (person.deathPlace) locations.add(person.deathPlace);
+            });
+            
+            // Personnes mariées (avec conjoints)
+            const marriedCount = familyTree.persons.filter(p => p.spouses && p.spouses.length > 0).length;
+            
+            // Génération maximale
+            const maxGeneration = Math.max(...familyTree.persons.map(p => p.generation || 1));
+            
+            return {
+                totalPersons,
+                maleCount,
+                femaleCount,
+                unknownGender,
+                malePercent: totalPersons > 0 ? Math.round((maleCount / totalPersons) * 100) : 0,
+                femalePercent: totalPersons > 0 ? Math.round((femaleCount / totalPersons) * 100) : 0,
+                withPhoto,
+                withPhotoPercent: totalPersons > 0 ? Math.round((withPhoto / totalPersons) * 100) : 0,
+                averageAge,
+                uniqueLocations: locations.size,
+                marriedCount,
+                maxGeneration
+            };
+        }
+
+        // Rendre la chronologie
+        function renderTimeline() {
+            if (familyTree.persons.length === 0) {
+                timelineContainer.innerHTML = `
+                    <div style="text-align: center; padding: 50px; color: #777;">
+                        <i class="fas fa-stream" style="font-size: 3rem; margin-bottom: 15px;"></i>
+                        <p>Ajoutez des personnes avec des dates pour voir la chronologie.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Trier les personnes par date de naissance
+            const personsWithDates = familyTree.persons
+                .filter(p => p.birthDate)
+                .sort((a, b) => new Date(a.birthDate) - new Date(b.birthDate))
+                .slice(0, 10); // Limiter à 10 personnes pour l'exemple
+            
+            if (personsWithDates.length === 0) {
+                timelineContainer.innerHTML = `
+                    <div style="text-align: center; padding: 50px; color: #777;">
+                        <p>Aucune personne avec date de naissance renseignée.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            timelineContainer.innerHTML = personsWithDates.map((person, index) => {
+                const birthYear = person.birthDate ? new Date(person.birthDate).getFullYear() : '?';
+                const deathYear = person.deathDate ? new Date(person.deathDate).getFullYear() : '?';
+                
+                return `
+                    <div class="timeline-item ${index % 2 === 0 ? 'left' : 'right'}">
+                        <div class="timeline-content">
+                            <h4>${person.firstName} ${person.lastName}</h4>
+                            <p><strong>${birthYear} - ${deathYear}</strong></p>
+                            <p>${person.birthPlace || ''}</p>
+                            <p>${person.professions ? person.professions.substring(0, 100) + '...' : ''}</p>
+                            <button class="btn" style="width: auto; padding: 5px 10px; margin-top: 10px; font-size: 0.9rem;" onclick="viewPersonDetails('${person.id}')">
+                                Voir détails
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Ajouter un message si plus de personnes
+            if (familyTree.persons.length > personsWithDates.length) {
+                timelineContainer.innerHTML += `
+                    <div style="text-align: center; padding: 20px; color: #777;">
+                        <p>${familyTree.persons.length - personsWithDates.length} personnes supplémentaires sans date de naissance.</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Voir les détails d'une personne
+        windows.viewPersonDetails = function(personId) {
+            const person = familyTree.persons.find(p => p.id === personId);
+            if (!person) return;
+            
+            const birthYear = person.birthDate ? new Date(person.birthDate).getFullYear() : 'Inconnue';
+            const deathYear = person.deathDate ? new Date(person.deathDate).getFullYear() : 'Inconnue';
+            
+            // Trouver les parents et conjoints
+            const father = person.father ? familyTree.persons.find(p => p.id === person.father) : null;
+            const mother = person.mother ? familyTree.persons.find(p => p.id === person.mother) : null;
+            const spouses = person.spouses ? person.spouses.map(id => familyTree.persons.find(p => p.id === id)).filter(p => p) : [];
+            
+            modalContent.innerHTML = `
+                <div style="display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 20px;">
+                    ${person.photo ? 
+                        `<div style="flex: 0 0 200px;">
+                            <img src="${person.photo}" alt="${person.firstName} ${person.lastName}" style="width: 100%; border-radius: 10px;">
+                        </div>` : 
+                        ''
+                    }
+                    <div style="flex: 1;">
+                        <h2 style="color: var(--primary); margin-bottom: 10px;">${person.firstName} ${person.lastName}</h2>
+                        ${person.nickname ? `<p style="font-size: 1.2rem; color: var(--secondary); margin-bottom: 10px;">"${person.nickname}"</p>` : ''}
+                        <p><strong>${birthYear} - ${deathYear}</strong></p>
+                        <p>${person.birthPlace ? `Né(e) à ${person.birthPlace}` : ''}</p>
+                        <p>${person.deathPlace ? `Décédé(e) à ${person.deathPlace}` : ''}</p>
+                        <p>${person.gender === 'M' ? 'Homme' : person.gender === 'F' ? 'Femme' : 'Genre non spécifié'}</p>
+                        <p>Génération: ${person.generation || 'Non calculée'}</p>
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px;">
+                    ${person.professions ? `
+                        <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px;">
+                            <h4><i class="fas fa-briefcase"></i> Profession(s)</h4>
+                            <p>${person.professions}</p>
+                        </div>
+                    ` : ''}
+                    
+                    ${person.residences ? `
+                        <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px;">
+                            <h4><i class="fas fa-home"></i> Résidences</h4>
+                            <p>${person.residences}</p>
+                        </div>
+                    ` : ''}
+                </div>
+                
+                ${person.distinctiveSigns ? `
+                    <div style="margin-top: 20px;">
+                        <h4><i class="fas fa-user-tag"></i> Signes distinctifs</h4>
+                        <p>${person.distinctiveSigns}</p>
+                    </div>
+                ` : ''}
+                
+                ${person.testimonies ? `
+                    <div style="margin-top: 20px;">
+                        <h4><i class="fas fa-comment"></i> Témoignages et anecdotes</h4>
+                        <p>${person.testimonies}</p>
+                    </div>
+                ` : ''}
+                
+                ${person.additionalInfo ? `
+                    <div style="margin-top: 20px;">
+                        <h4><i class="fas fa-info-circle"></i> Informations supplémentaires</h4>
+                        <p>${person.additionalInfo}</p>
+                    </div>
+                ` : ''}
+                
+                <div style="margin-top: 30px;">
+                    <h4><i class="fas fa-network-wired"></i> Liens familiaux</h4>
+                    <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;">
+                        ${father ? `
+                            <div style="background-color: #e8f4fc; padding: 10px 15px; border-radius: 8px;">
+                                <strong>Père:</strong> ${father.firstName} ${father.lastName}
+                                <button class="btn" style="width: auto; padding: 3px 8px; margin-left: 10px; font-size: 0.8rem;" onclick="viewPersonDetails('${father.id}')">
+                                    Voir
+                                </button>
+                            </div>
+                        ` : ''}
+                        
+                        ${mother ? `
+                            <div style="background-color: #fce8f1; padding: 10px 15px; border-radius: 8px;">
+                                <strong>Mère:</strong> ${mother.firstName} ${mother.lastName}
+                                <button class="btn" style="width: auto; padding: 3px 8px; margin-left: 10px; font-size: 0.8rem;" onclick="viewPersonDetails('${mother.id}')">
+                                    Voir
+                                </button>
+                            </div>
+                        ` : ''}
+                        
+                        ${spouses.length > 0 ? `
+                            <div style="background-color: #f0f8e8; padding: 10px 15px; border-radius: 8px;">
+                                <strong>Conjoint(s):</strong> 
+                                ${spouses.map(spouse => `
+                                    ${spouse.firstName} ${spouse.lastName}
+                                    <button class="btn" style="width: auto; padding: 3px 8px; margin-left: 5px; font-size: 0.8rem;" onclick="viewPersonDetails('${spouse.id}')">
+                                        Voir
+                                    </button>
+                                `).join(', ')}
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+                
+                <div style="margin-top: 30px; display: flex; gap: 10px;">
+                    <button class="btn btn-primary" onclick="editPerson('${person.id}')">
+                        <i class="fas fa-edit"></i> Modifier cette personne
+                    </button>
+                    <button class="btn" onclick="personModal.style.display='none'">
+                        <i class="fas fa-times"></i> Fermer
+                    </button>
+                </div>
+            `;
+            
+            personModal.style.display = 'flex';
+        }
+
+        // Modifier une personne
+        windows.editPerson = function(personId) {
+            const person = familyTree.persons.find(p => p.id === personId);
+            if (!person) return;
+            
+            // Remplir le formulaire
+            document.getElementById('personId').value = person.id;
+            document.getElementById('lastName').value = person.lastName || '';
+            document.getElementById('firstName').value = person.firstName || '';
+            document.getElementById('nickname').value = person.nickname || '';
+            document.getElementById('gender').value = person.gender || 'U';
+            document.getElementById('birthDate').value = person.birthDate || '';
+            document.getElementById('birthPlace').value = person.birthPlace || '';
+            document.getElementById('deathDate').value = person.deathDate || '';
+            document.getElementById('deathPlace').value = person.deathPlace || '';
+            document.getElementById('professions').value = person.professions || '';
+            document.getElementById('residences').value = person.residences || '';
+            document.getElementById('documents').value = person.documents || '';
+            document.getElementById('distinctiveSigns').value = person.distinctiveSigns || '';
+            document.getElementById('testimonies').value = person.testimonies || '';
+            document.getElementById('additionalInfo').value = person.additionalInfo || '';
+            
+            // Photo
+            if (person.photo) {
+                previewImage.src = person.photo;
+                photoPreview.style.display = 'block';
+            } else {
+                photoPreview.style.display = 'none';
+            }
+            
+            // Mettre à jour les sélecteurs puis sélectionner les valeurs
+            setTimeout(() => {
+                document.getElementById('father').value = person.father || '';
+                document.getElementById('mother').value = person.mother || '';
+                
+                // Pour les conjoints multiples
+                if (person.spouses && person.spouses.length > 0) {
+                    person.spouses.forEach(spouseId => {
+                        const option = Array.from(document.getElementById('spouses').options).find(opt => opt.value === spouseId);
+                        if (option) option.selected = true;
+                    });
+                }
+            }, 100);
+            
+            // Passer à l'onglet formulaire
+            switchTab('form');
+            personModal.style.display = 'none';
+        }
+
+        // Exporter en JSON
+        function exportJSON() {
+            const dataStr = JSON.stringify(familyTree, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+            
+            const exportFileDefaultName = `arbre-genealogique-${new Date().toISOString().slice(0,10)}.json`;
+            
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
+        }
+
+        // Exporter en GEDCOM (simplifié)
+        function exportGEDCOM() {
+            // Format GEDCOM simplifié
+            let gedcom = "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n1 SOUR MON_ARBRE\n0 @U@ SUBM\n1 NAME User\n";
+            
+            familyTree.persons.forEach(person => {
+                gedcom += `0 @${person.id}@ INDI\n`;
+                gedcom += `1 NAME ${person.firstName} /${person.lastName}/\n`;
+                
+                if (person.gender === 'M') gedcom += "1 SEX M\n";
+                if (person.gender === 'F') gedcom += "1 SEX F\n";
+                
+                if (person.birthDate || person.birthPlace) {
+                    gedcom += "1 BIRT\n";
+                    if (person.birthDate) gedcom += `2 DATE ${person.birthDate}\n`;
+                    if (person.birthPlace) gedcom += `2 PLAC ${person.birthPlace}\n`;
+                }
+                
+                if (person.deathDate || person.deathPlace) {
+                    gedcom += "1 DEAT\n";
+                    if (person.deathDate) gedcom += `2 DATE ${person.deathDate}\n`;
+                    if (person.deathPlace) gedcom += `2 PLAC ${person.deathPlace}\n`;
+                }
+                
+                if (person.father) gedcom += `1 FAMC @F${person.father}@\n`;
+                
+                // Note pour informations supplémentaires
+                if (person.professions || person.testimonies) {
+                    gedcom += "1 NOTE ";
+                    if (person.professions) gedcom += `Profession: ${person.professions}. `;
+                    if (person.testimonies) gedcom += `Témoignage: ${person.testimonies}. `;
+                    gedcom += "\n";
+                }
+            });
+            
+            gedcom += "0 TRLR\n";
+            
+            const dataUri = 'data:text/gedcom;charset=utf-8,'+ encodeURIComponent(gedcom);
+            const exportFileDefaultName = `arbre-genealogique-${new Date().toISOString().slice(0,10)}.ged`;
+            
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
+        }
+
+        // Exporter en PDF (simplifié)
+        function exportPDF() {
+            alert("L'export PDF nécessiterait une bibliothèque comme jsPDF. Pour l'instant, utilisez l'export JSON ou GEDCOM.");
+            // En production, on pourrait utiliser jsPDF
+        }
+
+        // Importer des données
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    
+                    // Validation basique
+                    if (data.persons && Array.isArray(data.persons)) {
+                        familyTree = data;
+                        if (!familyTree.nextId) {
+                            familyTree.nextId = familyTree.persons.length + 1;
+                        }
+                        
+                        saveData();
+                        updateUI();
+                        updatePersonSelects();
+                        
+                        alert(`Import réussi ! ${familyTree.persons.length} personnes chargées.`);
+                    } else {
+                        alert("Format de fichier invalide. Le fichier doit contenir un arbre généalogique.");
+                    }
+                } catch (error) {
+                    alert("Erreur lors de l'import : " + error.message);
+                }
+            };
+            
+            reader.readAsText(file);
+        }
+
+        // Sauvegarder les données dans localStorage
+        function saveData() {
+            localStorage.setItem('familyTreeData', JSON.stringify(familyTree));
+        }
+
+        // Charger les données depuis localStorage
+        function loadData() {
+            const savedData = localStorage.getItem('familyTreeData');
+            if (savedData) {
+                try {
+                    familyTree = JSON.parse(savedData);
+                    
+                    // S'assurer que nextId est correct
+                    if (!familyTree.nextId || familyTree.nextId <= familyTree.persons.length) {
+                        familyTree.nextId = familyTree.persons.length + 1;
+                    }
+                } catch (error) {
+                    console.error("Erreur lors du chargement des données:", error);
+                    // Garder les données par défaut
+                }
+            }
+            
+            // Ajouter des données d'exemple si vide
+            if (familyTree.persons.length === 0) {
+                addSampleData();
+            }
+        }
+
+        // Ajouter des données d'exemple
+        function addSampleData() {
+            familyTree.persons = [
+                {
+                    id: "P-1",
+                    lastName: "Dupont",
+                    firstName: "Jean",
+                    nickname: "Le Grand",
+                    gender: "M",
+                    birthDate: "1890-03-15",
+                    birthPlace: "Paris, France",
+                    deathDate: "1965-06-22",
+                    deathPlace: "Lyon, France",
+                    professions: "Menuisier (1910-1940), puis commerçant (1940-1955)",
+                    residences: "Paris (1890-1920), Lyon (1920-1965)",
+                    photo: "",
+                    documents: "Acte de naissance, carte d'identité 1932",
+                    distinctiveSigns: "Cicatrice au menton, voix grave",
+                    testimonies: "Témoignage de sa fille Marie: 'Mon père était un homme travailleur qui a reconstruit son commerce après la guerre.'",
+                    additionalInfo: "A participé à la Première Guerre mondiale, a été fait prisonnier en 1916.",
+                    father: "",
+                    mother: "",
+                    spouses: ["P-2"],
+                    generation: 3
+                },
+                {
+                    id: "P-2",
+                    lastName: "Martin",
+                    firstName: "Marie",
+                    nickname: "",
+                    gender: "F",
+                    birthDate: "1895-11-08",
+                    birthPlace: "Lyon, France",
+                    deathDate: "1972-04-30",
+                    deathPlace: "Lyon, France",
+                    professions: "Ménagère, aide dans le commerce familial",
+                    residences: "Lyon (1915-1972)",
+                    photo: "",
+                    documents: "",
+                    distinctiveSigns: "Yeux bleus, toujours souriante",
+                    testimonies: "S'occupait de la comptabilité du commerce de son mari.",
+                    additionalInfo: "A élevé 4 enfants. Aimait jardiner.",
+                    father: "",
+                    mother: "",
+                    spouses: ["P-1"],
+                    generation: 3
+                },
+                {
+                    id: "P-3",
+                    lastName: "Dupont",
+                    firstName: "Pierre",
+                    nickname: "",
+                    gender: "M",
+                    birthDate: "1920-08-12",
+                    birthPlace: "Paris, France",
+                    deathDate: "2005-03-18",
+                    deathPlace: "Marseille, France",
+                    professions: "Ingénieur, professeur à l'université",
+                    residences: "Paris (1920-1945), Marseille (1945-2005)",
+                    photo: "",
+                    documents: "Diplôme d'ingénieur, médaille de la Résistance",
+                    distinctiveSigns: "Portait toujours des lunettes",
+                    testimonies: "A participé à la Résistance pendant la Seconde Guerre mondiale.",
+                    additionalInfo: "A publié plusieurs articles scientifiques.",
+                    father: "P-1",
+                    mother: "P-2",
+                    spouses: [],
+                    generation: 2
+                },
+                {
+                    id: "P-4",
+                    lastName: "Dupont",
+                    firstName: "Sophie",
+                    nickname: "",
+                    gender: "F",
+                    birthDate: "1985-05-20",
+                    birthPlace: "Marseille, France",
+                    deathDate: "",
+                    deathPlace: "",
+                    professions: "Médecin généraliste",
+                    residences: "Marseille (1985-2010), Paris (2010-aujourd'hui)",
+                    photo: "",
+                    documents: "",
+                    distinctiveSigns: "",
+                    testimonies: "",
+                    additionalInfo: "",
+                    father: "P-3",
+                    mother: "",
+                    spouses: [],
+                    generation: 1
+                }
+            ];
+            
+            familyTree.nextId = 5;
+            saveData();
+        }
+
+         // Initialiser l'application quand la page est chargée
+        document.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
