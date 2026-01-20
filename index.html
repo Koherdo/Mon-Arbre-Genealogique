@@ -551,6 +551,82 @@
             z-index: 100;
             max-width: 300px;
         }
+
+        /* Styles additionnels pour l'optimisation */
+        .loading {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        
+        .loading.active {
+            display: flex;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid var(--secondary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .performance-warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 0.9rem;
+        }
+        
+        .virtual-list {
+            max-height: 600px;
+            overflow-y: auto;
+            position: relative;
+        }
+        
+        .virtual-list-item {
+            position: absolute;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        /* Optimisations pour D3 */
+        .d3-node {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .d3-node:hover {
+            filter: brightness(1.1);
+            transform: scale(1.05);
+        }
+        
+        .d3-link {
+            transition: stroke 0.3s ease;
+        }
+        
+        .d3-link:hover {
+            stroke: var(--accent);
+            stroke-width: 2.5px;
+        }
     </style>
     <!-- Google Analytics -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=UA-XXXXXXXXX-X"></script>
@@ -560,6 +636,10 @@
   gtag('js', new Date());
   gtag('config', 'UA-XXXXXXXXX-X');
 </script>
+<!-- Google Drive API -->
+<script src="https://apis.google.com/js/api.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>   
 </head>
 <body>
     <div class="container">
@@ -897,599 +977,901 @@
         </div>
     </div>
 
-   <script>
-        // Données de l'application
-        let familyTree = {
-            persons: [],
-            nextId: 1,
-            metadata: {
-                created: new Date().toISOString(),
-                lastModified: new Date().toISOString(),
-                version: "1.0.0",
-                totalGenerations: 15
-            }
+     <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p id="loadingText">Chargement...</p>
+    </div>
+    
+ <script>
+        // ==============================================
+        // CONFIGURATION ET CONSTANTES
+        // ==============================================
+        const CONFIG = {
+            MAX_GENERATIONS: 15,
+            MAX_PERSONS_WARNING: 500,
+            AUTO_SAVE_INTERVAL: 30000, // 30 secondes
+            BACKUP_DAYS: 7,
+            VIRTUAL_LIST_ITEM_HEIGHT: 80,
+            PERFORMANCE_THRESHOLD: 1000
         };
-
-        // ==============================================
-        // FONCTIONS POUR GITHUB PAGES
-        // ==============================================
-        
-        // Fonction pour générer un ID unique
-        function generateUniqueId() {
-            return 'P-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-        }
-        
-        // Fonction améliorée pour sauvegarder les données
-        function saveData() {
-            try {
-                familyTree.metadata.lastModified = new Date().toISOString();
-                familyTree.metadata.personCount = familyTree.persons.length;
-                
-                // Calculer les statistiques pour les métadonnées
-                const stats = calculateStats();
-                familyTree.metadata.stats = stats;
-                
-                localStorage.setItem('familyTreeData', JSON.stringify(familyTree));
-                console.log('Données sauvegardées avec succès');
-                return true;
-            } catch (error) {
-                console.error('Erreur lors de la sauvegarde:', error);
-                return false;
-            }
-        }
-        
-        // Fonction pour exporter avec nom de fichier amélioré
-        function exportJSON() {
-            const dataStr = JSON.stringify(familyTree, null, 2);
-            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-            
-            const today = new Date();
-            const dateStr = today.toISOString().slice(0,10);
-            const timeStr = today.getHours() + '-' + today.getMinutes();
-            const exportFileDefaultName = `arbre-genealogique-${dateStr}_${timeStr}.json`;
-            
-            const linkElement = document.createElement('a');
-            linkElement.setAttribute('href', dataUri);
-            linkElement.setAttribute('download', exportFileDefaultName);
-            document.body.appendChild(linkElement);
-            linkElement.click();
-            document.body.removeChild(linkElement);
-        }
-        
-        // Fonction pour créer un backup automatique
-        function createAutoBackup() {
-            const backupKey = 'familyTreeBackup_' + new Date().toISOString().slice(0, 10);
-            localStorage.setItem(backupKey, JSON.stringify(familyTree));
-            
-            // Garder seulement les 7 derniers backups
-            const keys = Object.keys(localStorage).filter(key => key.startsWith('familyTreeBackup_'));
-            if (keys.length > 7) {
-                keys.sort().slice(0, keys.length - 7).forEach(key => localStorage.removeItem(key));
-            }
-        }
         
         // ==============================================
-        // FONCTIONS SPÉCIFIQUES 15 GÉNÉRATIONS
+        // MODULE DE GESTION DES DONNÉES
         // ==============================================
-        
-        // Calculer la génération de manière récursive
-        function calculateGenerationRecursive(personId, visited = new Set()) {
-            if (visited.has(personId)) return 1; // Éviter les cycles
-            visited.add(personId);
+        const DataManager = {
+            familyTree: {
+                persons: [],
+                nextId: 1,
+                metadata: {
+                    created: new Date().toISOString(),
+                    lastModified: new Date().toISOString(),
+                    version: "2.0.0",
+                    totalGenerations: CONFIG.MAX_GENERATIONS
+                }
+            },
             
-            const person = familyTree.persons.find(p => p.id === personId);
-            if (!person) return 1;
+            cache: {
+                stats: null,
+                generationMap: null,
+                lastUpdate: 0
+            },
             
-            if (person.generation) return person.generation;
+            // Initialiser les données
+            init() {
+                this.loadData();
+                this.rebuildCache();
+                return this.familyTree;
+            },
             
-            let maxParentGeneration = 1;
-            
-            if (person.father) {
-                const fatherGen = calculateGenerationRecursive(person.father, new Set(visited));
-                maxParentGeneration = Math.max(maxParentGeneration, fatherGen + 1);
-            }
-            
-            if (person.mother) {
-                const motherGen = calculateGenerationRecursive(person.mother, new Set(visited));
-                maxParentGeneration = Math.max(maxParentGeneration, motherGen + 1);
-            }
-            
-            return maxParentGeneration;
-        }
-        
-        // Valider qu'on ne dépasse pas 15 générations
-        function validateGenerationLimit(personId, parentId) {
-            if (!parentId) return true;
-            
-            const person = familyTree.persons.find(p => p.id === personId);
-            const parent = familyTree.persons.find(p => p.id === parentId);
-            
-            if (!person || !parent) return true;
-            
-            const parentGeneration = parent.generation || calculateGenerationRecursive(parentId);
-            
-            if (parentGeneration >= 15) {
-                alert(`Attention : La 15ème génération est la limite maximale. Ce parent est déjà à la génération ${parentGeneration}.`);
-                return false;
-            }
-            
-            return true;
-        }
-        
-        // Afficher la pyramide des générations
-        function renderGenerationPyramid() {
-            const generations = {};
-            
-            for (let i = 1; i <= 15; i++) {
-                generations[i] = familyTree.persons.filter(p => p.generation === i).length;
-            }
-            
-            let html = '<h3>Pyramide des générations</h3>';
-            html += '<div style="display: flex; align-items: flex-end; height: 200px; margin-top: 20px; gap: 5px;">';
-            
-            for (let i = 15; i >= 1; i--) {
-                const count = generations[i] || 0;
-                const maxCount = Math.max(...Object.values(generations), 1);
-                const height = (count / maxCount) * 180;
-                const theoretical = i === 1 ? 1 : Math.pow(2, i - 1);
-                
-                html += `
-                    <div style="text-align: center; flex: 1;">
-                        <div style="height: ${height}px; background: ${count === 0 ? '#ecf0f1' : count < theoretical ? '#3498db' : '#27ae60'}; 
-                                 border-radius: 5px 5px 0 0; position: relative;">
-                            <div style="position: absolute; top: -25px; left: 0; right: 0; font-size: 0.8rem; font-weight: bold;">
-                                ${count}
-                            </div>
-                        </div>
-                        <div style="font-size: 0.8rem; margin-top: 5px;">
-                            G${i}<br>
-                            <small>(${theoretical})</small>
-                        </div>
-                    </div>
-                `;
-            }
-            
-            html += '</div>';
-            html += '<p style="margin-top: 10px; font-size: 0.9rem; color: #777;">';
-            html += 'En bleu : générations incomplètes<br>';
-            html += 'En vert : générations complètes (nombre théorique atteint)<br>';
-            html += 'Nombre entre parenthèses = nombre théorique d\'ancêtres';
-            html += '</p>';
-            
-            return html;
-        }
-        
-        // ==============================================
-        // AMÉLIORATIONS DE L'INTERFACE
-        // ==============================================
-        
-        // Ajouter un tutoriel d'introduction
-        function showTutorial() {
-            const hasSeenTutorial = localStorage.getItem('hasSeenTutorial');
-            
-            if (!hasSeenTutorial && familyTree.persons.length === 0) {
-                setTimeout(() => {
-                    if (confirm("Bienvenue dans votre application d'arbre généalogique !\n\nSouhaitez-vous voir un tutoriel rapide ?")) {
-                        alert("TUTORIEL RAPIDE :\n\n1. Commencez par ajouter votre fiche (vous-même)\n2. Ajoutez vos parents\n3. Remontez progressivement les générations\n4. Utilisez l'export pour sauvegarder\n\nAstuce : Un arbre à 15 générations contient théoriquement 32 767 personnes !");
-                    }
-                    localStorage.setItem('hasSeenTutorial', 'true');
-                }, 1000);
-            }
-        }
-        
-        // Ajouter une barre d'état
-        function updateStatusBar() {
-            const statusElement = document.getElementById('statusBar') || createStatusBar();
-            const stats = calculateStats();
-            
-            statusElement.innerHTML = `
-                <span><i class="fas fa-users"></i> ${stats.totalPersons} personnes</span>
-                <span><i class="fas fa-layer-group"></i> Génération max: ${stats.maxGeneration}/15</span>
-                <span><i class="fas fa-save"></i> Dernière sauvegarde: ${new Date().toLocaleTimeString()}</span>
-            `;
-        }
-        
-        function createStatusBar() {
-            const statusBar = document.createElement('div');
-            statusBar.id = 'statusBar';
-            statusBar.style.cssText = `
-                position: fixed;
-                bottom: 0;
-                left: 0;
-                right: 0;
-                background: var(--primary);
-                color: white;
-                padding: 8px 20px;
-                font-size: 0.9rem;
-                display: flex;
-                justify-content: space-between;
-                z-index: 1000;
-            `;
-            document.body.appendChild(statusBar);
-            return statusBar;
-        }
-      
-        // Éléments DOM
-        const tabs = document.querySelectorAll('.tab');
-        const tabContents = document.querySelectorAll('.tab-content');
-        const personForm = document.getElementById('personForm');
-        const photoUpload = document.getElementById('photoUpload');
-        const photoInput = document.getElementById('photoInput');
-        const photoPreview = document.getElementById('photoPreview');
-        const previewImage = document.getElementById('previewImage');
-        const progressFill = document.getElementById('progressFill');
-        const progressText = document.getElementById('progressText');
-        const personCountList = document.getElementById('personCountList');
-        const personListContainer = document.getElementById('personListContainer');
-        const searchPerson = document.getElementById('searchPerson');
-        const statsGrid = document.getElementById('statsGrid');
-        const timelineContainer = document.getElementById('timelineContainer');
-        const btnClearForm = document.getElementById('btnClearForm');
-        const personModal = document.getElementById('personModal');
-        const closeModal = document.getElementById('closeModal');
-        const modalContent = document.getElementById('modalContent');
-
-        // Initialisation
-        function initApp() {
-            console.log('Initialisation de l\'application Arbre Généalogique');
-            
-            // Charger les données
-            loadData();
-            
-            // Configurer les écouteurs d'événements
-            setupEventListeners();
-            
-            // Mettre à jour tous les sélecteurs
-            updatePersonSelects();
-            
-            // Mettre à jour l'interface
-            updateUI();
-            
-            // Afficher le tutoriel si premier lancement
-            showTutorial();
-            
-            // Créer la barre d'état
-            updateStatusBar();
-            
-            // Sauvegarde automatique périodique
-            setInterval(() => {
-                saveData();
-                updateStatusBar();
-            }, 30000); // Toutes les 30 secondes
-            
-            // Backup quotidien
-            setInterval(() => {
-                createAutoBackup();
-            }, 24 * 60 * 60 * 1000); // Tous les jours
-        }
-
-        // Configuration des écouteurs d'événements
-        function setupEventListeners() {
-            // Onglets
-            tabs.forEach(tab => {
-                tab.addEventListener('click', () => {
-                    const tabId = tab.getAttribute('data-tab');
-                    switchTab(tabId);
-                });
-            });
-
-            // Boutons de navigation
-            document.getElementById('btnNewPerson').addEventListener('click', () => {
-                clearForm();
-                switchTab('form');
-            });
-            
-            document.getElementById('btnViewTree').addEventListener('click', () => {
-                switchTab('tree');
-                renderTree();
-            });
-            
-            document.getElementById('btnViewList').addEventListener('click', () => {
-                switchTab('list');
-                renderPersonList();
-            });
-            
-            document.getElementById('btnStats').addEventListener('click', () => {
-                switchTab('stats');
-                renderStats();
-            });
-            
-            document.getElementById('btnTimeline').addEventListener('click', () => {
-                switchTab('timeline');
-                renderTimeline();
-            });
-            
-            document.getElementById('btnExport').addEventListener('click', () => {
-                switchTab('export');
-            });
-            
-            document.getElementById('btnImport').addEventListener('click', () => {
-                // Créer un input file pour l'import
-                const fileInput = document.createElement('input');
-                fileInput.type = 'file';
-                fileInput.accept = '.json,.ged,.gedcom';
-                fileInput.addEventListener('change', importData);
-                fileInput.click();
-            });
-
-            // Photo upload
-            photoUpload.addEventListener('click', () => {
-                photoInput.click();
-            });
-            
-            photoInput.addEventListener('change', function() {
-                if (this.files && this.files[0]) {
-                    const reader = new FileReader();
+            // Sauvegarder les données
+            save() {
+                try {
+                    this.familyTree.metadata.lastModified = new Date().toISOString();
+                    this.familyTree.metadata.personCount = this.familyTree.persons.length;
+                    this.familyTree.metadata.stats = this.calculateStats();
                     
-                    reader.onload = function(e) {
-                        previewImage.src = e.target.result;
-                        photoPreview.style.display = 'block';
+                    const dataStr = JSON.stringify(this.familyTree);
+                    localStorage.setItem('familyTreeData', dataStr);
+                    
+                    this.rebuildCache();
+                    return true;
+                } catch (error) {
+                    console.error('Erreur sauvegarde:', error);
+                    return false;
+                }
+            },
+            
+            // Charger depuis localStorage
+            loadData() {
+                try {
+                    const savedData = localStorage.getItem('familyTreeData');
+                    if (savedData) {
+                        this.familyTree = JSON.parse(savedData);
+                        
+                        // Migration de données si nécessaire
+                        this.migrateData();
+                        
+                        // Assurer l'intégrité des données
+                        this.ensureDataIntegrity();
+                        
+                        if (!this.familyTree.nextId || this.familyTree.nextId <= this.familyTree.persons.length) {
+                            this.familyTree.nextId = this.familyTree.persons.length + 1;
+                        }
+                        
+                        console.log(`Données chargées: ${this.familyTree.persons.length} personnes`);
+                    } else {
+                        this.addSampleData();
+                    }
+                } catch (error) {
+                    console.error('Erreur chargement:', error);
+                    this.addSampleData();
+                }
+            },
+            
+            // Migration de données
+            migrateData() {
+                // Ajouter des champs manquants si nécessaire
+                this.familyTree.persons.forEach(person => {
+                    if (!person.id) person.id = this.generateId();
+                    if (!person.generation) person.generation = this.calculateGeneration(person);
+                });
+            },
+            
+            // Assurer l'intégrité des données
+            ensureDataIntegrity() {
+                const validIds = new Set();
+                
+                // Filtrer les personnes sans ID
+                this.familyTree.persons = this.familyTree.persons.filter(person => {
+                    if (!person.id) return false;
+                    if (validIds.has(person.id)) return false; // Éviter les doublons
+                    validIds.add(person.id);
+                    return true;
+                });
+                
+                // Nettoyer les références invalides
+                this.familyTree.persons.forEach(person => {
+                    if (person.father && !validIds.has(person.father)) person.father = '';
+                    if (person.mother && !validIds.has(person.mother)) person.mother = '';
+                    if (person.spouses) {
+                        person.spouses = person.spouses.filter(id => validIds.has(id));
+                    }
+                });
+            },
+            
+            // Reconstruire le cache
+            rebuildCache() {
+                this.cache.stats = this.calculateStats();
+                this.cache.generationMap = this.buildGenerationMap();
+                this.cache.lastUpdate = Date.now();
+            },
+            
+            // Obtenir les statistiques (avec cache)
+            getStats() {
+                if (!this.cache.stats || Date.now() - this.cache.lastUpdate > 5000) {
+                    this.cache.stats = this.calculateStats();
+                    this.cache.lastUpdate = Date.now();
+                }
+                return this.cache.stats;
+            },
+            
+            // Calculer les statistiques
+            calculateStats() {
+                const persons = this.familyTree.persons;
+                const total = persons.length;
+                
+                if (total === 0) {
+                    return {
+                        totalPersons: 0,
+                        maleCount: 0,
+                        femaleCount: 0,
+                        unknownGender: 0,
+                        malePercent: 0,
+                        femalePercent: 0,
+                        withPhoto: 0,
+                        withPhotoPercent: 0,
+                        averageAge: 0,
+                        uniqueLocations: 0,
+                        marriedCount: 0,
+                        maxGeneration: 1,
+                        completeness: 0
+                    };
+                }
+                
+                const maleCount = persons.filter(p => p.gender === 'M').length;
+                const femaleCount = persons.filter(p => p.gender === 'F').length;
+                const withPhoto = persons.filter(p => p.photo && p.photo.length > 0).length;
+                
+                // Âge moyen
+                let totalAge = 0;
+                let countWithAge = 0;
+                
+                persons.forEach(person => {
+                    if (person.birthDate && person.deathDate) {
+                        const birth = new Date(person.birthDate);
+                        const death = new Date(person.deathDate);
+                        const age = death.getFullYear() - birth.getFullYear();
+                        if (age > 0 && age < 120) {
+                            totalAge += age;
+                            countWithAge++;
+                        }
+                    }
+                });
+                
+                // Lieux uniques
+                const locations = new Set();
+                persons.forEach(person => {
+                    if (person.birthPlace) locations.add(person.birthPlace);
+                    if (person.deathPlace) locations.add(person.deathPlace);
+                });
+                
+                // Personnes mariées
+                const marriedCount = persons.filter(p => p.spouses && p.spouses.length > 0).length;
+                
+                // Génération max
+                const maxGeneration = Math.max(...persons.map(p => p.generation || 1));
+                
+                // Complétude théorique
+                let theoreticalCount = 0;
+                for (let i = 1; i <= Math.min(maxGeneration, CONFIG.MAX_GENERATIONS); i++) {
+                    const theoretical = i === 1 ? 1 : Math.pow(2, i - 1);
+                    const actual = persons.filter(p => p.generation === i).length;
+                    theoreticalCount += Math.min(actual, theoretical);
+                }
+                
+                const totalTheoretical = Math.pow(2, CONFIG.MAX_GENERATIONS) - 1;
+                const completeness = totalTheoretical > 0 ? Math.round((theoreticalCount / totalTheoretical) * 100) : 0;
+                
+                return {
+                    totalPersons: total,
+                    maleCount,
+                    femaleCount,
+                    unknownGender: total - maleCount - femaleCount,
+                    malePercent: Math.round((maleCount / total) * 100),
+                    femalePercent: Math.round((femaleCount / total) * 100),
+                    withPhoto,
+                    withPhotoPercent: Math.round((withPhoto / total) * 100),
+                    averageAge: countWithAge > 0 ? Math.round(totalAge / countWithAge) : 0,
+                    uniqueLocations: locations.size,
+                    marriedCount,
+                    maxGeneration,
+                    completeness
+                };
+            },
+            
+            // Construire la carte des générations
+            buildGenerationMap() {
+                const map = new Map();
+                for (let i = 1; i <= CONFIG.MAX_GENERATIONS; i++) {
+                    map.set(i, this.familyTree.persons.filter(p => p.generation === i));
+                }
+                return map;
+            },
+            
+            // Générer un ID unique
+            generateId() {
+                return 'P-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+            },
+            
+            // Ajouter une personne
+            addPerson(personData) {
+                if (!personData.id) {
+                    personData.id = this.generateId();
+                }
+                
+                if (!personData.generation) {
+                    personData.generation = this.calculateGeneration(personData);
+                }
+                
+                this.familyTree.persons.push(personData);
+                this.save();
+                return personData;
+            },
+            
+            // Mettre à jour une personne
+            updatePerson(personId, updates) {
+                const index = this.familyTree.persons.findIndex(p => p.id === personId);
+                if (index !== -1) {
+                    // Mettre à jour la génération si les parents changent
+                    if (updates.father || updates.mother) {
+                        updates.generation = this.calculateGeneration({
+                            ...this.familyTree.persons[index],
+                            ...updates
+                        });
+                    }
+                    
+                    this.familyTree.persons[index] = {
+                        ...this.familyTree.persons[index],
+                        ...updates
                     };
                     
-                    reader.readAsDataURL(this.files[0]);
+                    this.save();
+                    return this.familyTree.persons[index];
                 }
-            });
-
-            // Formulaire
-            personForm.addEventListener('submit', savePerson);
-            btnClearForm.addEventListener('click', clearForm);
-
-            // Recherche
-            searchPerson.addEventListener('input', renderPersonList);
-
-            // Export/Import
-            document.getElementById('exportJSON').addEventListener('click', exportJSON);
-            document.getElementById('exportGEDCOM').addEventListener('click', exportGEDCOM);
-            document.getElementById('exportPDF').addEventListener('click', exportPDF);
-            document.getElementById('importData').addEventListener('click', () => {
-                // Créer un input file pour l'import
-                const fileInput = document.createElement('input');
-                fileInput.type = 'file';
-                fileInput.accept = '.json,.ged,.gedcom';
-                fileInput.addEventListener('change', importData);
-                fileInput.click();
-            });
-
-            // Modal
-            closeModal.addEventListener('click', () => {
-                personModal.style.display = 'none';
-            });
-            
-            window.addEventListener('click', (event) => {
-                if (event.target === personModal) {
-                    personModal.style.display = 'none';
-                }
-            });
-
-            // Boutons de l'arbre
-            document.getElementById('btnViewFanChart')?.addEventListener('click', () => {
-                alert('La vue en éventail sera implémentée dans une version future.');
-            });
-            
-            document.getElementById('btnViewStandardTree')?.addEventListener('click', () => {
-                renderTree();
-            });
-        }
-
-        // Changer d'onglet
-        function switchTab(tabId) {
-            // Désactiver tous les onglets
-            tabs.forEach(tab => tab.classList.remove('active'));
-            tabContents.forEach(content => content.classList.remove('active'));
-            
-            // Activer l'onglet sélectionné
-            const activeTab = document.querySelector(`.tab[data-tab="${tabId}"]`);
-            const activeContent = document.getElementById(`${tabId}Tab`);
-            
-            if (activeTab) activeTab.classList.add('active');
-            if (activeContent) activeContent.classList.add('active');
-        }
-
-        // Sauvegarder une personne
-        function savePerson(e) {
-            e.preventDefault();
-            
-            // Récupérer les données du formulaire
-            const personId = document.getElementById('personId').value;
-            const personData = {
-                id: personId || generateUniqueId(),
-                lastName: document.getElementById('lastName').value,
-                firstName: document.getElementById('firstName').value,
-                nickname: document.getElementById('nickname').value,
-                gender: document.getElementById('gender').value,
-                birthDate: document.getElementById('birthDate').value,
-                birthPlace: document.getElementById('birthPlace').value,
-                deathDate: document.getElementById('deathDate').value,
-                deathPlace: document.getElementById('deathPlace').value,
-                professions: document.getElementById('professions').value,
-                residences: document.getElementById('residences').value,
-                photo: previewImage.src || '',
-                documents: document.getElementById('documents').value,
-                distinctiveSigns: document.getElementById('distinctiveSigns').value,
-                testimonies: document.getElementById('testimonies').value,
-                additionalInfo: document.getElementById('additionalInfo').value,
-                father: document.getElementById('father').value,
-                mother: document.getElementById('mother').value,
-                spouses: Array.from(document.getElementById('spouses').selectedOptions).map(opt => opt.value).filter(v => v)
-            };
+                return null;
+            },
             
             // Calculer la génération
-            personData.generation = calculateGeneration(personData);
-            
-            // Ajouter ou mettre à jour
-            if (personId) {
-                // Mettre à jour
-                const index = familyTree.persons.findIndex(p => p.id === personId);
-                if (index !== -1) {
-                    familyTree.persons[index] = {...familyTree.persons[index], ...personData};
+            calculateGeneration(person) {
+                if (person.generation) return person.generation;
+                
+                let maxParentGen = 1;
+                
+                if (person.father) {
+                    const father = this.familyTree.persons.find(p => p.id === person.father);
+                    if (father && father.generation) {
+                        maxParentGen = Math.max(maxParentGen, father.generation + 1);
+                    }
                 }
-            } else {
-                // Ajouter nouvelle personne
-                familyTree.persons.push(personData);
+                
+                if (person.mother) {
+                    const mother = this.familyTree.persons.find(p => p.id === person.mother);
+                    if (mother && mother.generation) {
+                        maxParentGen = Math.max(maxParentGen, mother.generation + 1);
+                    }
+                }
+                
+                return Math.min(maxParentGen, CONFIG.MAX_GENERATIONS);
+            },
+            
+            // Trouver une personne
+            findPerson(personId) {
+                return this.familyTree.persons.find(p => p.id === personId);
+            },
+            
+            // Rechercher des personnes
+            searchPersons(query, limit = 50) {
+                if (!query) return this.familyTree.persons.slice(0, limit);
+                
+                const q = query.toLowerCase();
+                return this.familyTree.persons.filter(person => {
+                    const fullName = `${person.firstName || ''} ${person.lastName || ''} ${person.nickname || ''}`.toLowerCase();
+                    return fullName.includes(q) ||
+                           (person.birthPlace && person.birthPlace.toLowerCase().includes(q)) ||
+                           (person.professions && person.professions.toLowerCase().includes(q));
+                }).slice(0, limit);
+            },
+            
+            // Données d'exemple
+            addSampleData() {
+                this.familyTree.persons = [
+                    {
+                        id: "P-1",
+                        lastName: "Dupont",
+                        firstName: "Jean",
+                        nickname: "Le Grand",
+                        gender: "M",
+                        birthDate: "1890-03-15",
+                        birthPlace: "Paris, France",
+                        deathDate: "1965-06-22",
+                        deathPlace: "Lyon, France",
+                        professions: "Menuisier (1910-1940), puis commerçant (1940-1955)",
+                        residences: "Paris (1890-1920), Lyon (1920-1965)",
+                        photo: "",
+                        documents: "Acte de naissance, carte d'identité 1932",
+                        distinctiveSigns: "Cicatrice au menton, voix grave",
+                        testimonies: "Témoignage de sa fille Marie: 'Mon père était un homme travailleur qui a reconstruit son commerce après la guerre.'",
+                        additionalInfo: "A participé à la Première Guerre mondiale, a été fait prisonnier en 1916.",
+                        father: "",
+                        mother: "",
+                        spouses: ["P-2"],
+                        generation: 3
+                    },
+                    {
+                        id: "P-2",
+                        lastName: "Martin",
+                        firstName: "Marie",
+                        nickname: "",
+                        gender: "F",
+                        birthDate: "1895-11-08",
+                        birthPlace: "Lyon, France",
+                        deathDate: "1972-04-30",
+                        deathPlace: "Lyon, France",
+                        professions: "Ménagère, aide dans le commerce familial",
+                        residences: "Lyon (1915-1972)",
+                        photo: "",
+                        documents: "",
+                        distinctiveSigns: "Yeux bleus, toujours souriante",
+                        testimonies: "S'occupait de la comptabilité du commerce de son mari.",
+                        additionalInfo: "A élevé 4 enfants. Aimait jardiner.",
+                        father: "",
+                        mother: "",
+                        spouses: ["P-1"],
+                        generation: 3
+                    },
+                    {
+                        id: "P-3",
+                        lastName: "Dupont",
+                        firstName: "Pierre",
+                        nickname: "",
+                        gender: "M",
+                        birthDate: "1920-08-12",
+                        birthPlace: "Paris, France",
+                        deathDate: "2005-03-18",
+                        deathPlace: "Marseille, France",
+                        professions: "Ingénieur, professeur à l'université",
+                        residences: "Paris (1920-1945), Marseille (1945-2005)",
+                        photo: "",
+                        documents: "Diplôme d'ingénieur, médaille de la Résistance",
+                        distinctiveSigns: "Portait toujours des lunettes",
+                        testimonies: "A participé à la Résistance pendant la Seconde Guerre mondiale.",
+                        additionalInfo: "A publié plusieurs articles scientifiques.",
+                        father: "P-1",
+                        mother: "P-2",
+                        spouses: [],
+                        generation: 2
+                    },
+                    {
+                        id: "P-4",
+                        lastName: "Dupont",
+                        firstName: "Sophie",
+                        nickname: "",
+                        gender: "F",
+                        birthDate: "1985-05-20",
+                        birthPlace: "Marseille, France",
+                        deathDate: "",
+                        deathPlace: "",
+                        professions: "Médecin généraliste",
+                        residences: "Marseille (1985-2010), Paris (2010-aujourd'hui)",
+                        photo: "",
+                        documents: "",
+                        distinctiveSigns: "",
+                        testimonies: "",
+                        additionalInfo: "",
+                        father: "P-3",
+                        mother: "",
+                        spouses: [],
+                        generation: 1
+                    }
+                ];
+                
+                this.familyTree.nextId = 5;
+                this.save();
             }
+        };
+        
+        // ==============================================
+        // MODULE D'INTERFACE UTILISATEUR
+        // ==============================================
+        const UIManager = {
+            // Éléments DOM
+            elements: {},
             
-            // Sauvegarder et mettre à jour l'interface
-            saveData();
-            updateUI();
-            updatePersonSelects();
-            clearForm();
-            
-            // Afficher un message de confirmation
-            alert(`Personne ${personId ? 'modifiée' : 'ajoutée'} avec succès !`);
-        }
-
-        // Calculer la génération
-        function calculateGeneration(personData) {
-            // Si c'est une personne existante, on garde sa génération
-            if (personData.generation) return personData.generation;
-            
-            // Sinon, on essaie de calculer à partir des parents
-            let parentGeneration = 1;
-            
-            if (personData.father) {
-                const father = familyTree.persons.find(p => p.id === personData.father);
-                if (father && father.generation) {
-                    parentGeneration = Math.max(parentGeneration, father.generation + 1);
+            // État de l'interface
+            state: {
+                currentTab: 'form',
+                selectedPersonId: null,
+                searchQuery: '',
+                virtualList: {
+                    startIndex: 0,
+                    visibleItems: 10,
+                    totalHeight: 0
                 }
-            }
+            },
             
-            if (personData.mother) {
-                const mother = familyTree.persons.find(p => p.id === personData.mother);
-                if (mother && mother.generation) {
-                    parentGeneration = Math.max(parentGeneration, mother.generation + 1);
+            // Initialiser l'interface
+            init() {
+                this.cacheElements();
+                this.setupEventListeners();
+                this.updateAll();
+                this.showTutorial();
+                this.createStatusBar();
+                
+                // Vérifier les performances
+                this.checkPerformance();
+            },
+            
+            // Mettre en cache les éléments DOM
+            cacheElements() {
+                this.elements = {
+                    tabs: document.querySelectorAll('.tab'),
+                    tabContents: document.querySelectorAll('.tab-content'),
+                    personForm: document.getElementById('personForm'),
+                    photoUpload: document.getElementById('photoUpload'),
+                    photoInput: document.getElementById('photoInput'),
+                    photoPreview: document.getElementById('photoPreview'),
+                    previewImage: document.getElementById('previewImage'),
+                    progressFill: document.getElementById('progressFill'),
+                    progressText: document.getElementById('progressText'),
+                    personCountList: document.getElementById('personCountList'),
+                    personListContainer: document.getElementById('personListContainer'),
+                    searchPerson: document.getElementById('searchPerson'),
+                    statsGrid: document.getElementById('statsGrid'),
+                    timelineContainer: document.getElementById('timelineContainer'),
+                    btnClearForm: document.getElementById('btnClearForm'),
+                    personModal: document.getElementById('personModal'),
+                    closeModal: document.getElementById('closeModal'),
+                    modalContent: document.getElementById('modalContent'),
+                    loading: document.getElementById('loading'),
+                    loadingText: document.getElementById('loadingText')
+                };
+            },
+            
+            // Configurer les événements
+            setupEventListeners() {
+                // Onglets
+                this.elements.tabs.forEach(tab => {
+                    tab.addEventListener('click', () => {
+                        const tabId = tab.getAttribute('data-tab');
+                        this.switchTab(tabId);
+                    });
+                });
+                
+                // Navigation
+                this.setupButton('btnNewPerson', () => {
+                    this.clearForm();
+                    this.switchTab('form');
+                });
+                
+                this.setupButton('btnViewTree', () => {
+                    this.switchTab('tree');
+                    TreeVisualizer.renderTree();
+                });
+                
+                this.setupButton('btnViewList', () => {
+                    this.switchTab('list');
+                    this.renderPersonList();
+                });
+                
+                this.setupButton('btnStats', () => {
+                    this.switchTab('stats');
+                    this.renderStats();
+                });
+                
+                this.setupButton('btnTimeline', () => {
+                    this.switchTab('timeline');
+                    this.renderTimeline();
+                });
+                
+                this.setupButton('btnExport', () => {
+                    this.switchTab('export');
+                });
+                
+                this.setupButton('btnImport', () => {
+                    this.triggerFileImport();
+                });
+                
+                // Photo upload
+                this.elements.photoUpload.addEventListener('click', () => {
+                    this.elements.photoInput.click();
+                });
+                
+                this.elements.photoInput.addEventListener('change', (e) => {
+                    this.handlePhotoUpload(e);
+                });
+                
+                // Formulaire
+                this.elements.personForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    this.savePerson();
+                });
+                
+                this.elements.btnClearForm.addEventListener('click', () => {
+                    this.clearForm();
+                });
+                
+                // Recherche avec debounce
+                let searchTimeout;
+                this.elements.searchPerson?.addEventListener('input', (e) => {
+                    clearTimeout(searchTimeout);
+                    searchTimeout = setTimeout(() => {
+                        this.state.searchQuery = e.target.value;
+                        this.renderPersonList();
+                    }, 300);
+                });
+                
+                // Export/Import
+                this.setupButton('exportJSON', ExportManager.exportJSON);
+                this.setupButton('exportGEDCOM', ExportManager.exportGEDCOM);
+                this.setupButton('exportPDF', ExportManager.exportPDF);
+                this.setupButton('importData', () => this.triggerFileImport());
+                
+                // Modal
+                this.elements.closeModal.addEventListener('click', () => {
+                    this.hideModal();
+                });
+                
+                window.addEventListener('click', (event) => {
+                    if (event.target === this.elements.personModal) {
+                        this.hideModal();
+                    }
+                });
+                
+                // Arbre interactif
+                this.setupButton('btnInteractiveTree', () => {
+                    this.switchTab('tree');
+                    TreeVisualizer.renderInteractiveTree();
+                });
+                
+                this.setupButton('btnLineageChart', () => {
+                    this.switchTab('tree');
+                    LineageAnalyzer.renderLineageChart();
+                });
+            },
+            
+            // Helper pour configurer les boutons
+            setupButton(id, handler) {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.addEventListener('click', handler);
                 }
-            }
+            },
             
-            return parentGeneration;
-        }
-
-        // Effacer le formulaire
-        function clearForm() {
-            personForm.reset();
-            document.getElementById('personId').value = '';
-            photoPreview.style.display = 'none';
-            previewImage.src = '';
-        }
-
-        // Mettre à jour les sélecteurs de personnes
-        function updatePersonSelects() {
-            const fatherSelect = document.getElementById('father');
-            const motherSelect = document.getElementById('mother');
-            const spousesSelect = document.getElementById('spouses');
-            
-            if (!fatherSelect || !motherSelect || !spousesSelect) return;
-            
-            // Sauvegarder les valeurs sélectionnées
-            const selectedFather = fatherSelect.value;
-            const selectedMother = motherSelect.value;
-            const selectedSpouses = Array.from(spousesSelect.selectedOptions).map(opt => opt.value);
-            
-            // Effacer les options
-            fatherSelect.innerHTML = '<option value="">-- Sélectionner --</option>';
-            motherSelect.innerHTML = '<option value="">-- Sélectionner --</option>';
-            spousesSelect.innerHTML = '<option value="">-- Sélectionner --</option>';
-            
-            // Ajouter les personnes
-            familyTree.persons.forEach(person => {
-                const optionText = `${person.firstName} ${person.lastName} (${person.generation || '?'})`;
+            // Changer d'onglet
+            switchTab(tabId) {
+                this.state.currentTab = tabId;
                 
-                // Père (seulement hommes)
-                if (person.gender === 'M' || person.gender === 'U') {
-                    const option = document.createElement('option');
-                    option.value = person.id;
-                    option.textContent = optionText;
-                    fatherSelect.appendChild(option);
+                // Désactiver tous les onglets
+                this.elements.tabs.forEach(tab => tab.classList.remove('active'));
+                this.elements.tabContents.forEach(content => content.classList.remove('active'));
+                
+                // Activer l'onglet sélectionné
+                const activeTab = document.querySelector(`.tab[data-tab="${tabId}"]`);
+                const activeContent = document.getElementById(`${tabId}Tab`);
+                
+                if (activeTab) activeTab.classList.add('active');
+                if (activeContent) activeContent.classList.add('active');
+            },
+            
+            // Afficher le chargement
+            showLoading(text = 'Chargement...') {
+                this.elements.loadingText.textContent = text;
+                this.elements.loading.classList.add('active');
+            },
+            
+            // Cacher le chargement
+            hideLoading() {
+                this.elements.loading.classList.remove('active');
+            },
+            
+            // Gérer l'upload de photo
+            handlePhotoUpload(event) {
+                const file = event.target.files[0];
+                if (file) {
+                    if (file.size > 5 * 1024 * 1024) { // 5MB max
+                        alert('La photo ne doit pas dépasser 5MB');
+                        return;
+                    }
+                    
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        this.elements.previewImage.src = e.target.result;
+                        this.elements.photoPreview.style.display = 'block';
+                        
+                        // Compresser l'image pour le stockage
+                        this.compressImage(e.target.result, (compressed) => {
+                            this.elements.previewImage.src = compressed;
+                        });
+                    };
+                    reader.readAsDataURL(file);
+                }
+            },
+            
+            // Compresser l'image
+            compressImage(dataUrl, callback) {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Définir la taille max
+                    const maxWidth = 800;
+                    const maxHeight = 800;
+                    let width = img.width;
+                    let height = img.height;
+                    
+                    if (width > height) {
+                        if (width > maxWidth) {
+                            height = Math.round((height * maxWidth) / width);
+                            width = maxWidth;
+                        }
+                    } else {
+                        if (height > maxHeight) {
+                            width = Math.round((width * maxHeight) / height);
+                            height = maxHeight;
+                        }
+                    }
+                    
+                    canvas.width = width;
+                    canvas.height = height;
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    callback(canvas.toDataURL('image/jpeg', 0.7));
+                };
+                img.src = dataUrl;
+            },
+            
+            // Sauvegarder une personne
+            async savePerson() {
+                this.showLoading('Sauvegarde en cours...');
+                
+                try {
+                    const personId = document.getElementById('personId').value;
+                    const personData = this.collectFormData();
+                    
+                    let result;
+                    if (personId) {
+                        result = DataManager.updatePerson(personId, personData);
+                    } else {
+                        result = DataManager.addPerson(personData);
+                    }
+                    
+                    if (result) {
+                        this.updatePersonSelects();
+                        this.updateAll();
+                        this.clearForm();
+                        this.showNotification(`Personne ${personId ? 'modifiée' : 'ajoutée'} avec succès !`, 'success');
+                    }
+                } catch (error) {
+                    console.error('Erreur sauvegarde:', error);
+                    this.showNotification('Erreur lors de la sauvegarde', 'error');
+                } finally {
+                    this.hideLoading();
+                }
+            },
+            
+            // Collecter les données du formulaire
+            collectFormData() {
+                return {
+                    lastName: document.getElementById('lastName').value,
+                    firstName: document.getElementById('firstName').value,
+                    nickname: document.getElementById('nickname').value,
+                    gender: document.getElementById('gender').value,
+                    birthDate: document.getElementById('birthDate').value,
+                    birthPlace: document.getElementById('birthPlace').value,
+                    deathDate: document.getElementById('deathDate').value,
+                    deathPlace: document.getElementById('deathPlace').value,
+                    professions: document.getElementById('professions').value,
+                    residences: document.getElementById('residences').value,
+                    photo: this.elements.previewImage.src || '',
+                    documents: document.getElementById('documents').value,
+                    distinctiveSigns: document.getElementById('distinctiveSigns').value,
+                    testimonies: document.getElementById('testimonies').value,
+                    additionalInfo: document.getElementById('additionalInfo').value,
+                    father: document.getElementById('father').value,
+                    mother: document.getElementById('mother').value,
+                    spouses: Array.from(document.getElementById('spouses').selectedOptions)
+                        .map(opt => opt.value)
+                        .filter(v => v)
+                };
+            },
+            
+            // Effacer le formulaire
+            clearForm() {
+                this.elements.personForm.reset();
+                document.getElementById('personId').value = '';
+                this.elements.photoPreview.style.display = 'none';
+                this.elements.previewImage.src = '';
+            },
+            
+            // Mettre à jour les sélecteurs
+            updatePersonSelects() {
+                const selects = ['father', 'mother', 'spouses'];
+                const selectedValues = {};
+                
+                // Sauvegarder les valeurs sélectionnées
+                selects.forEach(id => {
+                    const select = document.getElementById(id);
+                    if (select) {
+                        if (select.multiple) {
+                            selectedValues[id] = Array.from(select.selectedOptions).map(opt => opt.value);
+                        } else {
+                            selectedValues[id] = select.value;
+                        }
+                    }
+                });
+                
+                // Regénérer les options
+                selects.forEach(id => {
+                    const select = document.getElementById(id);
+                    if (select) {
+                        select.innerHTML = '<option value="">-- Sélectionner --</option>';
+                        
+                        DataManager.familyTree.persons.forEach(person => {
+                            const option = document.createElement('option');
+                            option.value = person.id;
+                            option.textContent = `${person.firstName} ${person.lastName} (G${person.generation || '?'})`;
+                            
+                            // Filtres selon le type de sélecteur
+                            if (id === 'father' && person.gender !== 'M' && person.gender !== 'U') return;
+                            if (id === 'mother' && person.gender !== 'F' && person.gender !== 'U') return;
+                            
+                            select.appendChild(option);
+                        });
+                        
+                        // Restaurer les sélections
+                        if (select.multiple && selectedValues[id]) {
+                            selectedValues[id].forEach(value => {
+                                const option = Array.from(select.options).find(opt => opt.value === value);
+                                if (option) option.selected = true;
+                            });
+                        } else if (selectedValues[id]) {
+                            select.value = selectedValues[id];
+                        }
+                    }
+                });
+            },
+            
+            // Mettre à jour toute l'interface
+            updateAll() {
+                this.updateProgress();
+                this.updatePersonCount();
+                
+                // Mettre à jour l'onglet actif
+                switch (this.state.currentTab) {
+                    case 'list':
+                        this.renderPersonList();
+                        break;
+                    case 'stats':
+                        this.renderStats();
+                        break;
+                    case 'timeline':
+                        this.renderTimeline();
+                        break;
+                    case 'tree':
+                        TreeVisualizer.renderTree();
+                        break;
+                }
+            },
+            
+            // Mettre à jour la progression
+            updateProgress() {
+                const stats = DataManager.getStats();
+                const progress = Math.min((stats.totalPersons / 100) * 100, 100);
+                
+                if (this.elements.progressFill) {
+                    this.elements.progressFill.style.width = `${progress}%`;
                 }
                 
-                // Mère (seulement femmes)
-                if (person.gender === 'F' || person.gender === 'U') {
-                    const option = document.createElement('option');
-                    option.value = person.id;
-                    option.textContent = optionText;
-                    motherSelect.appendChild(option);
+                if (this.elements.progressText) {
+                    this.elements.progressText.textContent = `${stats.totalPersons} personnes (${stats.completeness}% complété)`;
+                }
+            },
+            
+            // Mettre à jour le compteur
+            updatePersonCount() {
+                const stats = DataManager.getStats();
+                
+                if (this.elements.personCountList) {
+                    this.elements.personCountList.innerHTML = `
+                        <li><strong>Total:</strong> ${stats.totalPersons} personnes</li>
+                        <li><strong>Hommes:</strong> ${stats.maleCount}</li>
+                        <li><strong>Femmes:</strong> ${stats.femaleCount}</li>
+                        <li><strong>Genre inconnu:</strong> ${stats.unknownGender}</li>
+                        <li><strong>Avec photo:</strong> ${stats.withPhoto}</li>
+                        <li><strong>Génération max:</strong> ${stats.maxGeneration}</li>
+                    `;
+                }
+            },
+            
+            // Rendre la liste des personnes (avec virtualisation si nécessaire)
+            renderPersonList() {
+                const container = this.elements.personListContainer;
+                if (!container) return;
+                
+                const persons = DataManager.searchPersons(this.state.searchQuery);
+                const total = persons.length;
+                
+                if (total === 0) {
+                    container.innerHTML = `
+                        <p style="text-align: center; padding: 40px; color: #777;">
+                            ${this.state.searchQuery ? 'Aucune personne ne correspond à votre recherche.' : 'Aucune personne dans l\'arbre.'}
+                        </p>
+                    `;
+                    return;
                 }
                 
-                // Conjoints (toutes personnes)
-                const spouseOption = document.createElement('option');
-                spouseOption.value = person.id;
-                spouseOption.textContent = optionText;
-                spousesSelect.appendChild(spouseOption);
-            });
+                // Utiliser la virtualisation pour les grandes listes
+                if (total > CONFIG.PERFORMANCE_THRESHOLD) {
+                    this.renderVirtualList(persons, container);
+                } else {
+                    this.renderFullList(persons, container);
+                }
+            },
             
-            // Restaurer les sélections
-            fatherSelect.value = selectedFather;
-            motherSelect.value = selectedMother;
+            // Rendre la liste complète
+            renderFullList(persons, container) {
+                container.innerHTML = persons.map(person => this.createPersonListItem(person)).join('');
+                this.attachListEvents(container);
+            },
             
-            // Pour les conjoints multiples
-            selectedSpouses.forEach(spouseId => {
-                const option = Array.from(spousesSelect.options).find(opt => opt.value === spouseId);
-                if (option) option.selected = true;
-            });
-        }
-
-        // Mettre à jour l'interface
-        function updateUI() {
-            updateProgress();
-            updatePersonCount();
-        }
-
-        // Mettre à jour la progression
-        function updateProgress() {
-            if (!progressFill || !progressText) return;
-            
-            const totalPersons = familyTree.persons.length;
-            const maxPersons = 100; // Objectif initial
-            const progress = Math.min((totalPersons / maxPersons) * 100, 100);
-            
-            progressFill.style.width = `${progress}%`;
-            progressText.textContent = `${totalPersons} personnes ajoutées`;
-        }
-
-        // Mettre à jour le compteur de personnes
-        function updatePersonCount() {
-            if (!personCountList) return;
-            
-            const counts = {
-                total: familyTree.persons.length,
-                male: familyTree.persons.filter(p => p.gender === 'M').length,
-                female: familyTree.persons.filter(p => p.gender === 'F').length,
-                unknownGender: familyTree.persons.filter(p => p.gender === 'U' || !p.gender).length,
-                withPhoto: familyTree.persons.filter(p => p.photo).length
-            };
-            
-            personCountList.innerHTML = `
-                <li><strong>Total:</strong> ${counts.total} personnes</li>
-                <li><strong>Hommes:</strong> ${counts.male}</li>
-                <li><strong>Femmes:</strong> ${counts.female}</li>
-                <li><strong>Genre inconnu:</strong> ${counts.unknownGender}</li>
-                <li><strong>Avec photo:</strong> ${counts.withPhoto}</li>
-            `;
-        }
-
-        // Rendre la liste des personnes
-        function renderPersonList() {
-            if (!personListContainer) return;
-            
-            const searchTerm = searchPerson ? searchPerson.value.toLowerCase() : '';
-            const filteredPersons = familyTree.persons.filter(person => {
-                if (!searchTerm) return true;
+            // Rendre la liste virtualisée
+            renderVirtualList(persons, container) {
+                const itemHeight = CONFIG.VIRTUAL_LIST_ITEM_HEIGHT;
+                const totalHeight = persons.length * itemHeight;
                 
-                const fullName = `${person.firstName || ''} ${person.lastName || ''} ${person.nickname || ''}`.toLowerCase();
-                return fullName.includes(searchTerm) || 
-                       (person.birthPlace && person.birthPlace.toLowerCase().includes(searchTerm)) ||
-                       (person.professions && person.professions.toLowerCase().includes(searchTerm));
-            });
-            
-            if (filteredPersons.length === 0) {
-                personListContainer.innerHTML = `
-                    <p style="text-align: center; padding: 40px; color: #777;">
-                        ${searchTerm ? 'Aucune personne ne correspond à votre recherche.' : 'Aucune personne dans l\'arbre.'}
-                    </p>
+                container.innerHTML = `
+                    <div class="virtual-list" style="height: ${totalHeight}px;">
+                        ${persons.slice(this.state.virtualList.startIndex, 
+                            this.state.virtualList.startIndex + this.state.virtualList.visibleItems)
+                            .map((person, index) => `
+                                <div class="virtual-list-item" 
+                                     style="top: ${(this.state.virtualList.startIndex + index) * itemHeight}px;"
+                                     data-id="${person.id}">
+                                    ${this.createPersonListItem(person)}
+                                </div>
+                            `).join('')}
+                    </div>
                 `;
-                return;
-            }
+                
+                // Gérer le scroll pour la virtualisation
+                const listContainer = container.querySelector('.virtual-list');
+                listContainer.addEventListener('scroll', () => {
+                    const scrollTop = listContainer.scrollTop;
+                    const startIndex = Math.floor(scrollTop / itemHeight);
+                    const endIndex = Math.min(startIndex + this.state.virtualList.visibleItems, persons.length);
+                    
+                    if (startIndex !== this.state.virtualList.startIndex) {
+                        this.state.virtualList.startIndex = startIndex;
+                        this.renderVirtualList(persons, container);
+                    }
+                });
+                
+                this.attachListEvents(container);
+            },
             
-            personListContainer.innerHTML = filteredPersons.map(person => {
+            // Créer un élément de liste
+            createPersonListItem(person) {
                 const birthYear = person.birthDate ? new Date(person.birthDate).getFullYear() : '?';
                 const deathYear = person.deathDate ? new Date(person.deathDate).getFullYear() : '?';
                 
@@ -1497,634 +1879,564 @@
                     <div class="person-list-item" data-id="${person.id}">
                         ${person.photo ? 
                             `<img src="${person.photo}" class="person-list-photo" alt="${person.firstName} ${person.lastName}">` : 
-                            `<div class="person-list-photo" style="background-color: ${person.gender === 'M' ? '#3498db' : person.gender === 'F' ? '#e74c3c' : '#95a5a6'}; display: flex; align-items: center; justify-content: center;">
-                                <i class="fas fa-user" style="color: white; font-size: 1.5rem;"></i>
+                            `<div class="person-list-photo" style="background-color: ${person.gender === 'M' ? '#3498db' : person.gender === 'F' ? '#e74c3c' : '#95a5a6'};">
+                                <i class="fas fa-user"></i>
                             </div>`
                         }
                         <div class="person-list-info">
                             <h4>${person.firstName} ${person.lastName} ${person.nickname ? `"${person.nickname}"` : ''}</h4>
                             <p>${birthYear} - ${deathYear} | ${person.birthPlace || 'Lieu inconnu'}</p>
-                            <p style="font-size: 0.85rem; color: #777;">${person.professions || 'Profession non renseignée'}</p>
+                            <p>${person.professions ? person.professions.substring(0, 50) + (person.professions.length > 50 ? '...' : '') : ''}</p>
                         </div>
-                        <div style="margin-left: auto;">
-                            <button class="btn" style="width: auto; padding: 8px 15px; margin: 0 5px;" onclick="editPerson('${person.id}')">
+                        <div class="list-actions">
+                            <button class="btn btn-sm" onclick="UIManager.editPerson('${person.id}')">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button class="btn" style="width: auto; padding: 8px 15px; background-color: var(--accent);" onclick="viewPersonDetails('${person.id}')">
+                            <button class="btn btn-sm btn-view" onclick="UIManager.viewPersonDetails('${person.id}')">
                                 <i class="fas fa-eye"></i>
                             </button>
                         </div>
                     </div>
                 `;
-            }).join('');
+            },
             
-            // Ajouter des écouteurs pour la sélection
-            document.querySelectorAll('.person-list-item').forEach(item => {
-                item.addEventListener('click', function(e) {
-                    if (!e.target.closest('button')) {
-                        const personId = this.getAttribute('data-id');
-                        viewPersonDetails(personId);
-                    }
+            // Attacher les événements à la liste
+            attachListEvents(container) {
+                container.querySelectorAll('.person-list-item').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        if (!e.target.closest('button')) {
+                            const personId = item.getAttribute('data-id');
+                            this.viewPersonDetails(personId);
+                        }
+                    });
                 });
-            });
-        }
-
-        // Rendre l'arbre généalogique
-        function renderTree() {
-            const treeContainer = document.getElementById('treeVisualization');
-            if (!treeContainer) return;
+            },
             
-            if (familyTree.persons.length === 0) {
-                treeContainer.innerHTML = `
-                    <p style="text-align: center; padding: 50px; color: #777;">
-                        Ajoutez des personnes pour visualiser l'arbre généalogique.
-                    </p>
-                `;
-                return;
-            }
-            
-            // Pour cet exemple, nous allons créer une visualisation simple
-            treeContainer.innerHTML = `
-                <h3 style="text-align: center; margin-bottom: 20px; color: var(--primary);">
-                    Arbre généalogique (${familyTree.persons.length} personnes)
-                </h3>
-                <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 20px;" id="treeNodes">
-                    ${familyTree.persons.map(person => {
-                        const birthYear = person.birthDate ? new Date(person.birthDate).getFullYear() : '?';
-                        const deathYear = person.deathDate ? new Date(person.deathDate).getFullYear() : '?';
-                        
-                        return `
-                            <div class="person-card person-node" data-id="${person.id}" onclick="viewPersonDetails('${person.id}')">
-                                ${person.photo ? 
-                                    `<img src="${person.photo}" class="person-photo" alt="${person.firstName} ${person.lastName}">` : 
-                                    `<div class="person-photo" style="background-color: ${person.gender === 'M' ? '#3498db' : person.gender === 'F' ? '#e74c3c' : '#95a5a6'}; display: flex; align-items: center; justify-content: center;">
-                                        <i class="fas fa-user" style="color: white; font-size: 2rem;"></i>
-                                    </div>`
-                                }
-                                <div class="person-name">${person.firstName} ${person.lastName}</div>
-                                <div class="person-dates">${birthYear} - ${deathYear}</div>
-                                <div class="person-location">${person.birthPlace || ''}</div>
-                                <div style="font-size: 0.8rem; color: #777; margin-top: 5px;">Génération ${person.generation || '?'}</div>
-                            </div>
-                        `;
-                    }).join('')}
-                </div>
-                <div style="text-align: center; margin-top: 30px; color: #777; font-size: 0.9rem;">
-                    <p>Cliquez sur une personne pour voir ses détails. L'arbre interactif complet sera développé avec D3.js.</p>
-                </div>
-            `;
-        }
-
-        // Rendre les statistiques
-        function renderStats() {
-            if (!statsGrid) return;
-            
-            if (familyTree.persons.length === 0) {
-                statsGrid.innerHTML = `
-                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: #777;">
-                        <i class="fas fa-chart-bar" style="font-size: 3rem; margin-bottom: 15px;"></i>
-                        <p>Ajoutez des personnes pour voir les statistiques de votre arbre.</p>
+            // Rendre les statistiques
+            renderStats() {
+                const stats = DataManager.getStats();
+                
+                if (!this.elements.statsGrid) return;
+                
+                this.elements.statsGrid.innerHTML = `
+                    <div class="stat-card">
+                        <i class="fas fa-users"></i>
+                        <div class="stat-number">${stats.totalPersons}</div>
+                        <div class="stat-label">Personnes totales</div>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-venus"></i>
+                        <div class="stat-number">${stats.femaleCount}</div>
+                        <div class="stat-label">Femmes (${stats.femalePercent}%)</div>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-mars"></i>
+                        <div class="stat-number">${stats.maleCount}</div>
+                        <div class="stat-label">Hommes (${stats.malePercent}%)</div>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-camera"></i>
+                        <div class="stat-number">${stats.withPhoto}</div>
+                        <div class="stat-label">Avec photo (${stats.withPhotoPercent}%)</div>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-birthday-cake"></i>
+                        <div class="stat-number">${stats.averageAge}</div>
+                        <div class="stat-label">Âge moyen (ans)</div>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-map-marked-alt"></i>
+                        <div class="stat-number">${stats.uniqueLocations}</div>
+                        <div class="stat-label">Lieux différents</div>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-heart"></i>
+                        <div class="stat-number">${stats.marriedCount}</div>
+                        <div class="stat-label">Personnes mariées</div>
+                    </div>
+                    <div class="stat-card">
+                        <i class="fas fa-layer-group"></i>
+                        <div class="stat-number">${stats.maxGeneration}/15</div>
+                        <div class="stat-label">Génération max</div>
                     </div>
                 `;
-                return;
-            }
+            },
             
-            // Calculer les statistiques
-            const stats = calculateStats();
-            
-            statsGrid.innerHTML = `
-                <div class="stat-card">
-                    <i class="fas fa-users"></i>
-                    <div class="stat-number">${stats.totalPersons}</div>
-                    <div class="stat-label">Personnes totales</div>
-                </div>
-                <div class="stat-card">
-                    <i class="fas fa-venus"></i>
-                    <div class="stat-number">${stats.femaleCount}</div>
-                    <div class="stat-label">Femmes (${stats.femalePercent}%)</div>
-                </div>
-                <div class="stat-card">
-                    <i class="fas fa-mars"></i>
-                    <div class="stat-number">${stats.maleCount}</div>
-                    <div class="stat-label">Hommes (${stats.malePercent}%)</div>
-                </div>
-                <div class="stat-card">
-                    <i class="fas fa-camera"></i>
-                    <div class="stat-number">${stats.withPhoto}</div>
-                    <div class="stat-label">Avec photo (${stats.withPhotoPercent}%)</div>
-                </div>
-                <div class="stat-card">
-                    <i class="fas fa-birthday-cake"></i>
-                    <div class="stat-number">${stats.averageAge}</div>
-                    <div class="stat-label">Âge moyen (ans)</div>
-                </div>
-                <div class="stat-card">
-                    <i class="fas fa-map-marked-alt"></i>
-                    <div class="stat-number">${stats.uniqueLocations}</div>
-                    <div class="stat-label">Lieux différents</div>
-                </div>
-                <div class="stat-card">
-                    <i class="fas fa-heart"></i>
-                    <div class="stat-number">${stats.marriedCount}</div>
-                    <div class="stat-label">Personnes mariées</div>
-                </div>
-                <div class="stat-card">
-                    <i class="fas fa-layer-group"></i>
-                    <div class="stat-number">${stats.maxGeneration}</div>
-                    <div class="stat-label">Génération max</div>
-                </div>
-            `;
-        }
-
-        // Calculer les statistiques
-        function calculateStats() {
-            const totalPersons = familyTree.persons.length;
-            const maleCount = familyTree.persons.filter(p => p.gender === 'M').length;
-            const femaleCount = familyTree.persons.filter(p => p.gender === 'F').length;
-            const unknownGender = totalPersons - maleCount - femaleCount;
-            
-            const withPhoto = familyTree.persons.filter(p => p.photo).length;
-            
-            // Calcul de l'âge moyen
-            let totalAge = 0;
-            let countWithAge = 0;
-            
-            familyTree.persons.forEach(person => {
-                if (person.birthDate && person.deathDate) {
-                    const birth = new Date(person.birthDate);
-                    const death = new Date(person.deathDate);
-                    const age = death.getFullYear() - birth.getFullYear();
-                    totalAge += age;
-                    countWithAge++;
+            // Rendre la chronologie
+            renderTimeline() {
+                const persons = DataManager.familyTree.persons
+                    .filter(p => p.birthDate)
+                    .sort((a, b) => new Date(a.birthDate) - new Date(b.birthDate))
+                    .slice(0, 20);
+                
+                if (!this.elements.timelineContainer) return;
+                
+                if (persons.length === 0) {
+                    this.elements.timelineContainer.innerHTML = `
+                        <div style="text-align: center; padding: 50px; color: #777;">
+                            <i class="fas fa-stream" style="font-size: 3rem;"></i>
+                            <p>Ajoutez des personnes avec des dates pour voir la chronologie.</p>
+                        </div>
+                    `;
+                    return;
                 }
-            });
+                
+                this.elements.timelineContainer.innerHTML = persons.map((person, index) => {
+                    const birthYear = new Date(person.birthDate).getFullYear();
+                    const deathYear = person.deathDate ? new Date(person.deathDate).getFullYear() : '?';
+                    
+                    return `
+                        <div class="timeline-item ${index % 2 === 0 ? 'left' : 'right'}">
+                            <div class="timeline-content">
+                                <h4>${person.firstName} ${person.lastName}</h4>
+                                <p><strong>${birthYear} - ${deathYear}</strong></p>
+                                <p>${person.birthPlace || ''}</p>
+                                <p>${person.professions ? person.professions.substring(0, 80) + '...' : ''}</p>
+                                <button class="btn btn-sm" onclick="UIManager.viewPersonDetails('${person.id}')">
+                                    Voir détails
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            },
             
-            const averageAge = countWithAge > 0 ? Math.round(totalAge / countWithAge) : 0;
-            
-            // Lieux uniques
-            const locations = new Set();
-            familyTree.persons.forEach(person => {
-                if (person.birthPlace) locations.add(person.birthPlace);
-                if (person.deathPlace) locations.add(person.deathPlace);
-            });
-            
-            // Personnes mariées (avec conjoints)
-            const marriedCount = familyTree.persons.filter(p => p.spouses && p.spouses.length > 0).length;
-            
-            // Génération maximale
-            const maxGeneration = Math.max(...familyTree.persons.map(p => p.generation || 1));
-            
-            return {
-                totalPersons,
-                maleCount,
-                femaleCount,
-                unknownGender,
-                malePercent: totalPersons > 0 ? Math.round((maleCount / totalPersons) * 100) : 0,
-                femalePercent: totalPersons > 0 ? Math.round((femaleCount / totalPersons) * 100) : 0,
-                withPhoto,
-                withPhotoPercent: totalPersons > 0 ? Math.round((withPhoto / totalPersons) * 100) : 0,
-                averageAge,
-                uniqueLocations: locations.size,
-                marriedCount,
-                maxGeneration
-            };
-        }
-
-        // Rendre la chronologie
-        function renderTimeline() {
-            if (!timelineContainer) return;
-            
-            if (familyTree.persons.length === 0) {
-                timelineContainer.innerHTML = `
-                    <div style="text-align: center; padding: 50px; color: #777;">
-                        <i class="fas fa-stream" style="font-size: 3rem; margin-bottom: 15px;"></i>
-                        <p>Ajoutez des personnes avec des dates pour voir la chronologie.</p>
+            // Voir les détails d'une personne
+            viewPersonDetails(personId) {
+                const person = DataManager.findPerson(personId);
+                if (!person) return;
+                
+                const father = person.father ? DataManager.findPerson(person.father) : null;
+                const mother = person.mother ? DataManager.findPerson(person.mother) : null;
+                const spouses = person.spouses ? person.spouses.map(id => DataManager.findPerson(id)).filter(p => p) : [];
+                
+                const birthYear = person.birthDate ? new Date(person.birthDate).getFullYear() : 'Inconnue';
+                const deathYear = person.deathDate ? new Date(person.deathDate).getFullYear() : 'Inconnue';
+                
+                this.elements.modalContent.innerHTML = `
+                    <div class="modal-header">
+                        <h2>${person.firstName} ${person.lastName}</h2>
+                        ${person.nickname ? `<p class="nickname">"${person.nickname}"</p>` : ''}
+                    </div>
+                    
+                    <div class="modal-body">
+                        <div class="person-basic-info">
+                            ${person.photo ? `<img src="${person.photo}" class="modal-photo" alt="${person.firstName} ${person.lastName}">` : ''}
+                            <div class="person-details">
+                                <p><strong>${birthYear} - ${deathYear}</strong></p>
+                                <p>${person.birthPlace ? `Né(e) à ${person.birthPlace}` : ''}</p>
+                                <p>${person.deathPlace ? `Décédé(e) à ${person.deathPlace}` : ''}</p>
+                                <p>${person.gender === 'M' ? 'Homme' : person.gender === 'F' ? 'Femme' : 'Genre non spécifié'}</p>
+                                <p>Génération: ${person.generation || 'Non calculée'}</p>
+                            </div>
+                        </div>
+                        
+                        ${this.createInfoSection('Profession(s)', person.professions, 'briefcase')}
+                        ${this.createInfoSection('Résidences', person.residences, 'home')}
+                        ${this.createInfoSection('Signes distinctifs', person.distinctiveSigns, 'user-tag')}
+                        ${this.createInfoSection('Témoignages', person.testimonies, 'comment')}
+                        ${this.createInfoSection('Informations supplémentaires', person.additionalInfo, 'info-circle')}
+                        
+                        <div class="family-links">
+                            <h4><i class="fas fa-network-wired"></i> Liens familiaux</h4>
+                            <div class="links-container">
+                                ${father ? this.createFamilyLink('Père', father) : ''}
+                                ${mother ? this.createFamilyLink('Mère', mother) : ''}
+                                ${spouses.length > 0 ? `
+                                    <div class="family-link">
+                                        <strong>Conjoint(s):</strong>
+                                        ${spouses.map(spouse => this.createFamilyLink('', spouse)).join(', ')}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="modal-actions">
+                        <button class="btn btn-primary" onclick="UIManager.editPerson('${person.id}')">
+                            <i class="fas fa-edit"></i> Modifier
+                        </button>
+                        <button class="btn" onclick="UIManager.hideModal()">
+                            <i class="fas fa-times"></i> Fermer
+                        </button>
                     </div>
                 `;
-                return;
-            }
+                
+                this.showModal();
+            },
             
-            // Trier les personnes par date de naissance
-            const personsWithDates = familyTree.persons
-                .filter(p => p.birthDate)
-                .sort((a, b) => new Date(a.birthDate) - new Date(b.birthDate))
-                .slice(0, 10); // Limiter à 10 personnes pour l'exemple
-            
-            if (personsWithDates.length === 0) {
-                timelineContainer.innerHTML = `
-                    <div style="text-align: center; padding: 50px; color: #777;">
-                        <p>Aucune personne avec date de naissance renseignée.</p>
+            // Créer une section d'information
+            createInfoSection(title, content, icon) {
+                if (!content) return '';
+                return `
+                    <div class="info-section">
+                        <h4><i class="fas fa-${icon}"></i> ${title}</h4>
+                        <p>${content}</p>
                     </div>
                 `;
-                return;
-            }
+            },
             
-            timelineContainer.innerHTML = personsWithDates.map((person, index) => {
+            // Créer un lien familial
+            createFamilyLink(label, person) {
+                return `
+                    <div class="family-link">
+                        ${label ? `<strong>${label}:</strong>` : ''}
+                        ${person.firstName} ${person.lastName}
+                        <button class="btn btn-sm" onclick="UIManager.viewPersonDetails('${person.id}')">
+                            Voir
+                        </button>
+                    </div>
+                `;
+            },
+            
+            // Modifier une personne
+            editPerson(personId) {
+                const person = DataManager.findPerson(personId);
+                if (!person) return;
+                
+                // Remplir le formulaire
+                document.getElementById('personId').value = person.id;
+                document.getElementById('lastName').value = person.lastName || '';
+                document.getElementById('firstName').value = person.firstName || '';
+                document.getElementById('nickname').value = person.nickname || '';
+                document.getElementById('gender').value = person.gender || 'U';
+                document.getElementById('birthDate').value = person.birthDate || '';
+                document.getElementById('birthPlace').value = person.birthPlace || '';
+                document.getElementById('deathDate').value = person.deathDate || '';
+                document.getElementById('deathPlace').value = person.deathPlace || '';
+                document.getElementById('professions').value = person.professions || '';
+                document.getElementById('residences').value = person.residences || '';
+                document.getElementById('documents').value = person.documents || '';
+                document.getElementById('distinctiveSigns').value = person.distinctiveSigns || '';
+                document.getElementById('testimonies').value = person.testimonies || '';
+                document.getElementById('additionalInfo').value = person.additionalInfo || '';
+                
+                // Photo
+                if (person.photo) {
+                    this.elements.previewImage.src = person.photo;
+                    this.elements.photoPreview.style.display = 'block';
+                }
+                
+                // Mettre à jour les sélecteurs
+                setTimeout(() => {
+                    document.getElementById('father').value = person.father || '';
+                    document.getElementById('mother').value = person.mother || '';
+                    
+                    if (person.spouses && person.spouses.length > 0) {
+                        person.spouses.forEach(spouseId => {
+                            const option = Array.from(document.getElementById('spouses').options)
+                                .find(opt => opt.value === spouseId);
+                            if (option) option.selected = true;
+                        });
+                    }
+                }, 100);
+                
+                this.switchTab('form');
+                this.hideModal();
+            },
+            
+            // Afficher le modal
+            showModal() {
+                this.elements.personModal.style.display = 'flex';
+            },
+            
+            // Cacher le modal
+            hideModal() {
+                this.elements.personModal.style.display = 'none';
+            },
+            
+            // Afficher une notification
+            showNotification(message, type = 'info') {
+                const notification = document.createElement('div');
+                notification.className = `notification notification-${type}`;
+                notification.innerHTML = `
+                    <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+                    <span>${message}</span>
+                    <button onclick="this.parentElement.remove()">&times;</button>
+                `;
+                
+                document.body.appendChild(notification);
+                
+                setTimeout(() => {
+                    if (notification.parentElement) {
+                        notification.remove();
+                    }
+                }, 5000);
+            },
+            
+            // Créer la barre d'état
+            createStatusBar() {
+                const statusBar = document.createElement('div');
+                statusBar.id = 'statusBar';
+                statusBar.style.cssText = `
+                    position: fixed;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    background: var(--primary);
+                    color: white;
+                    padding: 8px 20px;
+                    font-size: 0.9rem;
+                    display: flex;
+                    justify-content: space-between;
+                    z-index: 1000;
+                `;
+                document.body.appendChild(statusBar);
+                
+                // Mettre à jour périodiquement
+                setInterval(() => this.updateStatusBar(), 10000);
+                this.updateStatusBar();
+            },
+            
+            // Mettre à jour la barre d'état
+            updateStatusBar() {
+                const statusBar = document.getElementById('statusBar');
+                if (!statusBar) return;
+                
+                const stats = DataManager.getStats();
+                const lastSave = new Date(DataManager.familyTree.metadata.lastModified).toLocaleTimeString();
+                
+                statusBar.innerHTML = `
+                    <span><i class="fas fa-users"></i> ${stats.totalPersons} personnes</span>
+                    <span><i class="fas fa-layer-group"></i> Génération max: ${stats.maxGeneration}/15</span>
+                    <span><i class="fas fa-save"></i> Dernière sauvegarde: ${lastSave}</span>
+                `;
+            },
+            
+            // Vérifier les performances
+            checkPerformance() {
+                const stats = DataManager.getStats();
+                
+                if (stats.totalPersons > CONFIG.MAX_PERSONS_WARNING) {
+                    const warning = document.createElement('div');
+                    warning.className = 'performance-warning';
+                    warning.innerHTML = `
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Votre arbre contient ${stats.totalPersons} personnes. Pour des performances optimales, 
+                        envisagez d'utiliser les fonctionnalités de recherche et de filtrage.
+                    `;
+                    
+                    const container = document.querySelector('.content-area');
+                    if (container) {
+                        container.prepend(warning);
+                    }
+                }
+            },
+            
+            // Tutoriel
+            showTutorial() {
+                const hasSeenTutorial = localStorage.getItem('hasSeenTutorial');
+                
+                if (!hasSeenTutorial && DataManager.familyTree.persons.length === 0) {
+                    setTimeout(() => {
+                        if (confirm("Bienvenue dans votre application d'arbre généalogique !\n\nSouhaitez-vous voir un tutoriel rapide ?")) {
+                            this.showNotification("TUTORIEL: 1. Ajoutez-vous 2. Ajoutez vos parents 3. Remontez les générations 4. Sauvegardez régulièrement", 'info');
+                        }
+                        localStorage.setItem('hasSeenTutorial', 'true');
+                    }, 1000);
+                }
+            },
+            
+            // Déclencher l'import de fichier
+            triggerFileImport() {
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.accept = '.json,.ged,.gedcom';
+                fileInput.addEventListener('change', (e) => ExportManager.importData(e));
+                fileInput.click();
+            }
+        };
+        
+        // ==============================================
+        // MODULE DE VISUALISATION D'ARBRE
+        // ==============================================
+        const TreeVisualizer = {
+            currentTree: null,
+            
+            renderTree() {
+                const container = document.getElementById('treeVisualization');
+                if (!container) return;
+                
+                const persons = DataManager.familyTree.persons;
+                
+                if (persons.length === 0) {
+                    container.innerHTML = `
+                        <p style="text-align: center; padding: 50px; color: #777;">
+                            Ajoutez des personnes pour visualiser l'arbre généalogique.
+                        </p>
+                    `;
+                    return;
+                }
+                
+                container.innerHTML = `
+                    <h3 style="text-align: center; margin-bottom: 20px; color: var(--primary);">
+                        Arbre généalogique (${persons.length} personnes)
+                    </h3>
+                    <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 20px;" id="treeNodes">
+                        ${persons.slice(0, 50).map(person => this.createPersonNode(person)).join('')}
+                    </div>
+                    ${persons.length > 50 ? `
+                        <div style="text-align: center; margin-top: 20px; color: #777;">
+                            <p>${persons.length - 50} personnes supplémentaires (affichage limité à 50)</p>
+                        </div>
+                    ` : ''}
+                `;
+            },
+            
+            createPersonNode(person) {
                 const birthYear = person.birthDate ? new Date(person.birthDate).getFullYear() : '?';
                 const deathYear = person.deathDate ? new Date(person.deathDate).getFullYear() : '?';
                 
                 return `
-                    <div class="timeline-item ${index % 2 === 0 ? 'left' : 'right'}">
-                        <div class="timeline-content">
-                            <h4>${person.firstName} ${person.lastName}</h4>
-                            <p><strong>${birthYear} - ${deathYear}</strong></p>
-                            <p>${person.birthPlace || ''}</p>
-                            <p>${person.professions ? person.professions.substring(0, 100) + '...' : ''}</p>
-                            <button class="btn" style="width: auto; padding: 5px 10px; margin-top: 10px; font-size: 0.9rem;" onclick="viewPersonDetails('${person.id}')">
-                                Voir détails
-                            </button>
-                        </div>
+                    <div class="person-card person-node" data-id="${person.id}" onclick="UIManager.viewPersonDetails('${person.id}')">
+                        ${person.photo ? 
+                            `<img src="${person.photo}" class="person-photo" alt="${person.firstName} ${person.lastName}">` : 
+                            `<div class="person-photo" style="background-color: ${person.gender === 'M' ? '#3498db' : person.gender === 'F' ? '#e74c3c' : '#95a5a6'};">
+                                <i class="fas fa-user"></i>
+                            </div>`
+                        }
+                        <div class="person-name">${person.firstName} ${person.lastName}</div>
+                        <div class="person-dates">${birthYear} - ${deathYear}</div>
+                        <div class="person-location">${person.birthPlace || ''}</div>
+                        <div style="font-size: 0.8rem; color: #777; margin-top: 5px;">Génération ${person.generation || '?'}</div>
                     </div>
                 `;
-            }).join('');
+            },
             
-            // Ajouter un message si plus de personnes
-            if (familyTree.persons.length > personsWithDates.length) {
-                timelineContainer.innerHTML += `
-                    <div style="text-align: center; padding: 20px; color: #777;">
-                        <p>${familyTree.persons.length - personsWithDates.length} personnes supplémentaires sans date de naissance.</p>
+            renderInteractiveTree() {
+                // Implémentation simplifiée pour l'exemple
+                const container = document.getElementById('treeVisualization');
+                if (!container) return;
+                
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 50px;">
+                        <h3>Arbre Interactif D3.js</h3>
+                        <p>Cette fonctionnalité nécessite une implémentation complète de D3.js</p>
+                        <p>Pour l'instant, utilisez la vue standard.</p>
+                        <button class="btn" onclick="TreeVisualizer.renderTree()">
+                            <i class="fas fa-arrow-left"></i> Retour à la vue standard
+                        </button>
                     </div>
                 `;
             }
-        }
-
-        // Voir les détails d'une personne
-        window.viewPersonDetails = function(personId) {
-            const person = familyTree.persons.find(p => p.id === personId);
-            if (!person) return;
+        };
+        
+        // ==============================================
+        // MODULE D'ANALYSE DE LIGNÉES
+        // ==============================================
+        const LineageAnalyzer = {
+            renderLineageChart() {
+                const container = document.getElementById('treeVisualization');
+                if (!container) return;
+                
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 50px;">
+                        <h3>Analyse des Lignées</h3>
+                        <p>Cette fonctionnalité est en cours de développement.</p>
+                        <p>Elle permettra d'analyser les ascendants, descendants et les degrés de parenté.</p>
+                        <button class="btn" onclick="TreeVisualizer.renderTree()">
+                            <i class="fas fa-arrow-left"></i> Retour à l'arbre
+                        </button>
+                    </div>
+                `;
+            }
+        };
+        
+        // ==============================================
+        // MODULE D'EXPORT/IMPORT
+        // ==============================================
+        const ExportManager = {
+            exportJSON() {
+                const dataStr = JSON.stringify(DataManager.familyTree, null, 2);
+                const blob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `arbre-genealogique-${new Date().toISOString().slice(0,10)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                UIManager.showNotification('Export JSON réussi', 'success');
+            },
             
-            const birthYear = person.birthDate ? new Date(person.birthDate).getFullYear() : 'Inconnue';
-            const deathYear = person.deathDate ? new Date(person.deathDate).getFullYear() : 'Inconnue';
+            exportGEDCOM() {
+                // Implémentation simplifiée
+                UIManager.showNotification('Export GEDCOM en cours de développement', 'info');
+            },
             
-            // Trouver les parents et conjoints
-            const father = person.father ? familyTree.persons.find(p => p.id === person.father) : null;
-            const mother = person.mother ? familyTree.persons.find(p => p.id === person.mother) : null;
-            const spouses = person.spouses ? person.spouses.map(id => familyTree.persons.find(p => p.id === id)).filter(p => p) : [];
+            exportPDF() {
+                // Implémentation simplifiée
+                UIManager.showNotification('Export PDF en cours de développement', 'info');
+            },
             
-            modalContent.innerHTML = `
-                <div style="display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 20px;">
-                    ${person.photo ? 
-                        `<div style="flex: 0 0 200px;">
-                            <img src="${person.photo}" alt="${person.firstName} ${person.lastName}" style="width: 100%; border-radius: 10px;">
-                        </div>` : 
-                        ''
+            importData(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+                
+                UIManager.showLoading('Import en cours...');
+                
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        
+                        if (data.persons && Array.isArray(data.persons)) {
+                            if (confirm(`Importer ${data.persons.length} personnes ? Cela remplacera vos données actuelles.`)) {
+                                DataManager.familyTree = data;
+                                DataManager.save();
+                                UIManager.updateAll();
+                                UIManager.updatePersonSelects();
+                                UIManager.showNotification(`Import réussi ! ${data.persons.length} personnes chargées.`, 'success');
+                            }
+                        } else {
+                            throw new Error('Format invalide');
+                        }
+                    } catch (error) {
+                        console.error('Erreur import:', error);
+                        UIManager.showNotification('Erreur lors de l\'import : ' + error.message, 'error');
+                    } finally {
+                        UIManager.hideLoading();
                     }
-                    <div style="flex: 1;">
-                        <h2 style="color: var(--primary); margin-bottom: 10px;">${person.firstName} ${person.lastName}</h2>
-                        ${person.nickname ? `<p style="font-size: 1.2rem; color: var(--secondary); margin-bottom: 10px;">"${person.nickname}"</p>` : ''}
-                        <p><strong>${birthYear} - ${deathYear}</strong></p>
-                        <p>${person.birthPlace ? `Né(e) à ${person.birthPlace}` : ''}</p>
-                        <p>${person.deathPlace ? `Décédé(e) à ${person.deathPlace}` : ''}</p>
-                        <p>${person.gender === 'M' ? 'Homme' : person.gender === 'F' ? 'Femme' : 'Genre non spécifié'}</p>
-                        <p>Génération: ${person.generation || 'Non calculée'}</p>
-                    </div>
-                </div>
+                };
                 
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px;">
-                    ${person.professions ? `
-                        <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px;">
-                            <h4><i class="fas fa-briefcase"></i> Profession(s)</h4>
-                            <p>${person.professions}</p>
-                        </div>
-                    ` : ''}
-                    
-                    ${person.residences ? `
-                        <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px;">
-                            <h4><i class="fas fa-home"></i> Résidences</h4>
-                            <p>${person.residences}</p>
-                        </div>
-                    ` : ''}
-                </div>
-                
-                ${person.distinctiveSigns ? `
-                    <div style="margin-top: 20px;">
-                        <h4><i class="fas fa-user-tag"></i> Signes distinctifs</h4>
-                        <p>${person.distinctiveSigns}</p>
-                    </div>
-                ` : ''}
-                
-                ${person.testimonies ? `
-                    <div style="margin-top: 20px;">
-                        <h4><i class="fas fa-comment"></i> Témoignages et anecdotes</h4>
-                        <p>${person.testimonies}</p>
-                    </div>
-                ` : ''}
-                
-                ${person.additionalInfo ? `
-                    <div style="margin-top: 20px;">
-                        <h4><i class="fas fa-info-circle"></i> Informations supplémentaires</h4>
-                        <p>${person.additionalInfo}</p>
-                    </div>
-                ` : ''}
-                
-                <div style="margin-top: 30px;">
-                    <h4><i class="fas fa-network-wired"></i> Liens familiaux</h4>
-                    <div style="display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;">
-                        ${father ? `
-                            <div style="background-color: #e8f4fc; padding: 10px 15px; border-radius: 8px;">
-                                <strong>Père:</strong> ${father.firstName} ${father.lastName}
-                                <button class="btn" style="width: auto; padding: 3px 8px; margin-left: 10px; font-size: 0.8rem;" onclick="viewPersonDetails('${father.id}')">
-                                    Voir
-                                </button>
-                            </div>
-                        ` : ''}
-                        
-                        ${mother ? `
-                            <div style="background-color: #fce8f1; padding: 10px 15px; border-radius: 8px;">
-                                <strong>Mère:</strong> ${mother.firstName} ${mother.lastName}
-                                <button class="btn" style="width: auto; padding: 3px 8px; margin-left: 10px; font-size: 0.8rem;" onclick="viewPersonDetails('${mother.id}')">
-                                    Voir
-                                </button>
-                            </div>
-                        ` : ''}
-                        
-                        ${spouses.length > 0 ? `
-                            <div style="background-color: #f0f8e8; padding: 10px 15px; border-radius: 8px;">
-                                <strong>Conjoint(s):</strong> 
-                                ${spouses.map(spouse => `
-                                    ${spouse.firstName} ${spouse.lastName}
-                                    <button class="btn" style="width: auto; padding: 3px 8px; margin-left: 5px; font-size: 0.8rem;" onclick="viewPersonDetails('${spouse.id}')">
-                                        Voir
-                                    </button>
-                                `).join(', ')}
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-                
-                <div style="margin-top: 30px; display: flex; gap: 10px;">
-                    <button class="btn btn-primary" onclick="editPerson('${person.id}')">
-                        <i class="fas fa-edit"></i> Modifier cette personne
-                    </button>
-                    <button class="btn" onclick="personModal.style.display='none'">
-                        <i class="fas fa-times"></i> Fermer
-                    </button>
-                </div>
-            `;
-            
-            personModal.style.display = 'flex';
-        }
-
-        // Modifier une personne
-        window.editPerson = function(personId) {
-            const person = familyTree.persons.find(p => p.id === personId);
-            if (!person) return;
-            
-            // Remplir le formulaire
-            document.getElementById('personId').value = person.id;
-            document.getElementById('lastName').value = person.lastName || '';
-            document.getElementById('firstName').value = person.firstName || '';
-            document.getElementById('nickname').value = person.nickname || '';
-            document.getElementById('gender').value = person.gender || 'U';
-            document.getElementById('birthDate').value = person.birthDate || '';
-            document.getElementById('birthPlace').value = person.birthPlace || '';
-            document.getElementById('deathDate').value = person.deathDate || '';
-            document.getElementById('deathPlace').value = person.deathPlace || '';
-            document.getElementById('professions').value = person.professions || '';
-            document.getElementById('residences').value = person.residences || '';
-            document.getElementById('documents').value = person.documents || '';
-            document.getElementById('distinctiveSigns').value = person.distinctiveSigns || '';
-            document.getElementById('testimonies').value = person.testimonies || '';
-            document.getElementById('additionalInfo').value = person.additionalInfo || '';
-            
-            // Photo
-            if (person.photo) {
-                previewImage.src = person.photo;
-                photoPreview.style.display = 'block';
-            } else {
-                photoPreview.style.display = 'none';
+                reader.readAsText(file);
             }
+        };
+        
+        // ==============================================
+        // INITIALISATION DE L'APPLICATION
+        // ==============================================
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialiser les données
+            DataManager.init();
             
-            // Mettre à jour les sélecteurs puis sélectionner les valeurs
-            setTimeout(() => {
-                document.getElementById('father').value = person.father || '';
-                document.getElementById('mother').value = person.mother || '';
+            // Initialiser l'interface
+            UIManager.init();
+            
+            // Sauvegarde automatique
+            setInterval(() => {
+                DataManager.save();
+            }, CONFIG.AUTO_SAVE_INTERVAL);
+            
+            // Backup automatique
+            setInterval(() => {
+                const backupKey = 'familyTreeBackup_' + new Date().toISOString().slice(0, 10);
+                localStorage.setItem(backupKey, JSON.stringify(DataManager.familyTree));
                 
-                // Pour les conjoints multiples
-                if (person.spouses && person.spouses.length > 0) {
-                    person.spouses.forEach(spouseId => {
-                        const option = Array.from(document.getElementById('spouses').options).find(opt => opt.value === spouseId);
-                        if (option) option.selected = true;
+                // Nettoyer les anciens backups
+                const keys = Object.keys(localStorage).filter(key => key.startsWith('familyTreeBackup_'));
+                if (keys.length > CONFIG.BACKUP_DAYS) {
+                    keys.sort().slice(0, keys.length - CONFIG.BACKUP_DAYS).forEach(key => {
+                        localStorage.removeItem(key);
                     });
                 }
-            }, 100);
+            }, 24 * 60 * 60 * 1000);
             
-            // Passer à l'onglet formulaire
-            switchTab('form');
-            personModal.style.display = 'none';
-        }
-
-        // Exporter en GEDCOM (simplifié)
-        function exportGEDCOM() {
-            // Format GEDCOM simplifié
-            let gedcom = "0 HEAD\n1 GEDC\n2 VERS 5.5.1\n2 FORM LINEAGE-LINKED\n1 CHAR UTF-8\n1 SOUR MON_ARBRE\n0 @U@ SUBM\n1 NAME User\n";
-            
-            familyTree.persons.forEach(person => {
-                gedcom += `0 @${person.id}@ INDI\n`;
-                gedcom += `1 NAME ${person.firstName} /${person.lastName}/\n`;
-                
-                if (person.gender === 'M') gedcom += "1 SEX M\n";
-                if (person.gender === 'F') gedcom += "1 SEX F\n";
-                
-                if (person.birthDate || person.birthPlace) {
-                    gedcom += "1 BIRT\n";
-                    if (person.birthDate) gedcom += `2 DATE ${person.birthDate}\n`;
-                    if (person.birthPlace) gedcom += `2 PLAC ${person.birthPlace}\n`;
-                }
-                
-                if (person.deathDate || person.deathPlace) {
-                    gedcom += "1 DEAT\n";
-                    if (person.deathDate) gedcom += `2 DATE ${person.deathDate}\n`;
-                    if (person.deathPlace) gedcom += `2 PLAC ${person.deathPlace}\n`;
-                }
-                
-                if (person.father) gedcom += `1 FAMC @F${person.father}@\n`;
-                
-                // Note pour informations supplémentaires
-                if (person.professions || person.testimonies) {
-                    gedcom += "1 NOTE ";
-                    if (person.professions) gedcom += `Profession: ${person.professions}. `;
-                    if (person.testimonies) gedcom += `Témoignage: ${person.testimonies}. `;
-                    gedcom += "\n";
-                }
-            });
-            
-            gedcom += "0 TRLR\n";
-            
-            const dataUri = 'data:text/gedcom;charset=utf-8,'+ encodeURIComponent(gedcom);
-            const exportFileDefaultName = `arbre-genealogique-${new Date().toISOString().slice(0,10)}.ged`;
-            
-            const linkElement = document.createElement('a');
-            linkElement.setAttribute('href', dataUri);
-            linkElement.setAttribute('download', exportFileDefaultName);
-            linkElement.click();
-        }
-
-        // Exporter en PDF (simplifié)
-        function exportPDF() {
-            alert("L'export PDF nécessiterait une bibliothèque comme jsPDF. Pour l'instant, utilisez l'export JSON ou GEDCOM.");
-            // En production, on pourrait utiliser jsPDF
-        }
-
-        // Importer des données
-        function importData(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const data = JSON.parse(e.target.result);
-                    
-                    // Validation basique
-                    if (data.persons && Array.isArray(data.persons)) {
-                        if (confirm(`Importer ${data.persons.length} personnes ? Cela remplacera vos données actuelles.`)) {
-                            familyTree = data;
-                            if (!familyTree.nextId) {
-                                familyTree.nextId = familyTree.persons.length + 1;
-                            }
-                            
-                            saveData();
-                            updateUI();
-                            updatePersonSelects();
-                            
-                            alert(`Import réussi ! ${familyTree.persons.length} personnes chargées.`);
-                        }
-                    } else {
-                        alert("Format de fichier invalide. Le fichier doit contenir un arbre généalogique.");
-                    }
-                } catch (error) {
-                    alert("Erreur lors de l'import : " + error.message);
-                }
-            };
-            
-            reader.readAsText(file);
-        }
-
-        // Charger les données depuis localStorage
-        function loadData() {
-            const savedData = localStorage.getItem('familyTreeData');
-            if (savedData) {
-                try {
-                    familyTree = JSON.parse(savedData);
-                    
-                    // S'assurer que nextId est correct
-                    if (!familyTree.nextId || familyTree.nextId <= familyTree.persons.length) {
-                        familyTree.nextId = familyTree.persons.length + 1;
-                    }
-                    
-                    console.log(`Données chargées: ${familyTree.persons.length} personnes`);
-                } catch (error) {
-                    console.error("Erreur lors du chargement des données:", error);
-                    // Garder les données par défaut
-                    addSampleData();
-                }
-            } else {
-                // Ajouter des données d'exemple si vide
-                addSampleData();
-            }
-        }
-
-        // Ajouter des données d'exemple
-        function addSampleData() {
-            familyTree.persons = [
-                {
-                    id: "P-1",
-                    lastName: "Dupont",
-                    firstName: "Jean",
-                    nickname: "Le Grand",
-                    gender: "M",
-                    birthDate: "1890-03-15",
-                    birthPlace: "Paris, France",
-                    deathDate: "1965-06-22",
-                    deathPlace: "Lyon, France",
-                    professions: "Menuisier (1910-1940), puis commerçant (1940-1955)",
-                    residences: "Paris (1890-1920), Lyon (1920-1965)",
-                    photo: "",
-                    documents: "Acte de naissance, carte d'identité 1932",
-                    distinctiveSigns: "Cicatrice au menton, voix grave",
-                    testimonies: "Témoignage de sa fille Marie: 'Mon père était un homme travailleur qui a reconstruit son commerce après la guerre.'",
-                    additionalInfo: "A participé à la Première Guerre mondiale, a été fait prisonnier en 1916.",
-                    father: "",
-                    mother: "",
-                    spouses: ["P-2"],
-                    generation: 3
-                },
-                {
-                    id: "P-2",
-                    lastName: "Martin",
-                    firstName: "Marie",
-                    nickname: "",
-                    gender: "F",
-                    birthDate: "1895-11-08",
-                    birthPlace: "Lyon, France",
-                    deathDate: "1972-04-30",
-                    deathPlace: "Lyon, France",
-                    professions: "Ménagère, aide dans le commerce familial",
-                    residences: "Lyon (1915-1972)",
-                    photo: "",
-                    documents: "",
-                    distinctiveSigns: "Yeux bleus, toujours souriante",
-                    testimonies: "S'occupait de la comptabilité du commerce de son mari.",
-                    additionalInfo: "A élevé 4 enfants. Aimait jardiner.",
-                    father: "",
-                    mother: "",
-                    spouses: ["P-1"],
-                    generation: 3
-                },
-                {
-                    id: "P-3",
-                    lastName: "Dupont",
-                    firstName: "Pierre",
-                    nickname: "",
-                    gender: "M",
-                    birthDate: "1920-08-12",
-                    birthPlace: "Paris, France",
-                    deathDate: "2005-03-18",
-                    deathPlace: "Marseille, France",
-                    professions: "Ingénieur, professeur à l'université",
-                    residences: "Paris (1920-1945), Marseille (1945-2005)",
-                    photo: "",
-                    documents: "Diplôme d'ingénieur, médaille de la Résistance",
-                    distinctiveSigns: "Portait toujours des lunettes",
-                    testimonies: "A participé à la Résistance pendant la Seconde Guerre mondiale.",
-                    additionalInfo: "A publié plusieurs articles scientifiques.",
-                    father: "P-1",
-                    mother: "P-2",
-                    spouses: [],
-                    generation: 2
-                },
-                {
-                    id: "P-4",
-                    lastName: "Dupont",
-                    firstName: "Sophie",
-                    nickname: "",
-                    gender: "F",
-                    birthDate: "1985-05-20",
-                    birthPlace: "Marseille, France",
-                    deathDate: "",
-                    deathPlace: "",
-                    professions: "Médecin généraliste",
-                    residences: "Marseille (1985-2010), Paris (2010-aujourd'hui)",
-                    photo: "",
-                    documents: "",
-                    distinctiveSigns: "",
-                    testimonies: "",
-                    additionalInfo: "",
-                    father: "P-3",
-                    mother: "",
-                    spouses: [],
-                    generation: 1
-                }
-            ];
-            
-            familyTree.nextId = 5;
-            saveData();
-            console.log('Données d\'exemple ajoutées');
-        }
-
-        // Initialiser l'application quand la page est chargée
-        document.addEventListener('DOMContentLoaded', initApp);
+            console.log('Application initialisée avec succès');
+        });
     </script>
 </body>
 </html>
